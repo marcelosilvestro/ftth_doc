@@ -33,7 +33,7 @@ jobs:
           [ "$MANIFEST" = "$TAG" ] || { echo "manifest.json diz $MANIFEST e a tag diz $TAG"; exit 1; }
 
       - name: Empacotar
-        run: ./empacotar.sh
+        run: bash empacotar.sh
 
       - name: Publicar a release
         uses: softprops/action-gh-release@v2
