@@ -75,9 +75,19 @@
 .ftth-card-link:hover { text-decoration: underline; }
 .ftth-card-nota   { margin: 10px 0 0; }
 
+/* Dois cards lado a lado. O grid vendorizado so traz col-lg-3 e col-lg-9, entao as telas de
+   configuracao usam este par, que empilha sozinho quando a tela aperta. */
+.ftth-duplo        { display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+                     align-items: start; margin-bottom: 14px; }
+.ftth-duplo > *    { min-width: 0; }
+.ftth-duplo .ftth-card { margin-bottom: 0; height: 100%; }
+.ftth-duplo--3por2 { grid-template-columns: 3fr 2fr; }
+.ftth-duplo--2por3 { grid-template-columns: 2fr 3fr; }
+
 /* Indicadores: rotulo pequeno em cima, numero grande embaixo. O valor usa margin-top auto
    para que numeros da mesma linha fiquem alinhados mesmo quando um rotulo ocupa duas linhas. */
-.ftth-kpis        { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ftth-kpis        { display: grid; gap: 8px;
+                    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
 .ftth-kpi         { display: flex; flex-direction: column; min-width: 0;
                     border: 1px solid var(--ftth-borda); border-radius: 6px;
                     background: var(--ftth-fundo); padding: 8px 10px; text-decoration: none; }
@@ -100,9 +110,9 @@ a.ftth-kpi:hover  { border-color: var(--ftth-azul-claro); background: #fff; }
 .ftth-form-campo .ftth-campo { width: 100%; }
 .ftth-form-acoes  { display: flex; gap: 8px; margin-left: auto; }
 
-@media (max-width: 1100px) { .ftth-kpis { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 640px)  { .ftth-kpis { grid-template-columns: repeat(2, 1fr); }
-                             .ftth-form-acoes { margin-left: 0; } }
+@media (max-width: 900px) { .ftth-duplo, .ftth-duplo--3por2, .ftth-duplo--2por3 {
+                               grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .ftth-form-acoes { margin-left: 0; } }
 
 /* ---------------------------------------------------------------- mapa */
 .ftth-wrap--mapa  { padding: 10px 12px 12px; }
@@ -268,7 +278,11 @@ html.ftth-sem-scroll body { overflow: hidden; height: 100%; }
 .ftth-flutuante-info strong { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
                               color: #7FE3B0; }
 .ftth-flutuante-info span   { font-size: 12.5px; }
-.ftth-flutuante .ftth-btn   { padding: 6px 12px; font-size: 12.5px; }
+/* Ícone à esquerda, na mesma linha do texto e centralizado com ele: os botões destes
+   cards são baixos, e o alinhamento de linha padrão deixava o ícone "pendurado". */
+.ftth-flutuante .ftth-btn   { padding: 6px 12px; font-size: 12.5px;
+                              display: inline-flex; align-items: center; gap: 5px; }
+.ftth-flutuante .ftth-btn i { margin: 0; font-size: 13px; line-height: 1; }
 
 /* Modo Mover: âmbar, porque nada ali foi gravado ainda. O verde do traçado significa
    "em andamento e será criado"; este diz "em edição, e você ainda pode desistir". */

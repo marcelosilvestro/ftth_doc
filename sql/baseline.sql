@@ -64,6 +64,7 @@ INSERT INTO `tab_ftth_config` (`chave`, `valor`, `descricao`) VALUES
   ('mapa_rotulo_zoom',       '17',    'Zoom a partir do qual o nome da caixa aparece no mapa'),
   ('mapa_cabo_espessura',    '5',     'Espessura da linha do cabo no mapa (px)'),
   ('mapa_cabo_espessura_q',  '4',     'Espessura da linha de cabo ainda em quarentena (px)'),
+  ('raio_quebra_cabo_m',     '10',    'Distancia em metros para o mapa oferecer emendar a caixa no cabo'),
   ('sync_cto_nativa',        '0',     'Excecao aprovada: espelha as CTOs na tabela nativa `cto` (1=liga)'),
   ('sync_cto_olt_id',        '',      'olt.id gravado em cto.olt_id; vazio = usa a unica OLT cadastrada'),
   ('sync_porta_qualificar',  '1',     'CTO com mais de um splitter de atendimento: grava "Splitter:numero" em porta_splitter (1) ou so o numero, com aviso de ambiguidade (0)')

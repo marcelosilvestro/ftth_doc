@@ -46,7 +46,7 @@ T::certo('todas as tabelas sao InnoDB + utf8mb4', $erradas === [], json_encode($
 T::igual('15 tipos de cabo no catalogo', 15, (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_cabo_tipo'));
 T::igual('18 perdas de splitter no catalogo', 18, (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_perda_padrao'));
 T::igual('5 comprimentos de onda', 5, (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_atenuacao'));
-T::igual('19 chaves de configuracao', 19, (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_config'));
+T::igual('20 chaves de configuracao', 20, (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_config'));
 T::igual('perda do 1:8 e 10.50 dB', '10.50', (string) Db::valor(
     'SELECT perda_db FROM tab_ftth_perda_padrao WHERE modelo = "BAL" AND razao = "1:8"'));
 T::igual('atenuacao de 1490 nm e 0.280 dB/km', '0.280', (string) Db::valor(

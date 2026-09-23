@@ -1037,6 +1037,127 @@ final class Topologia
         return $layout;
     }
 
+
+    /**
+     * Dos dois vãos que chegam nesta caixa, qual é o que vem do POP?
+     *
+     * Serve para o diagrama nascer na leitura de quem trabalha nele: o cabo que vem do
+     * DC/POP à esquerda, o que segue para a rua à direita. Duas perguntas, nessa ordem:
+     *
+     *   1. por onde chega o sinal — o motor de potência já propaga a partir das portas do
+     *      DIO, então uma fibra com dBm neste vão é a resposta direta;
+     *   2. sem sinal (rede ainda não ligada, ou trecho isolado), anda pelo traçado contando
+     *      saltos até encontrar uma caixa do tipo DC. Vence o ramo que chegar mais perto.
+     *
+     * Devolve null quando os dois lados empatam — aí não há por que preferir um.
+     */
+    public static function vaoQueVemDoPop(int $caixaId, int $vaoA, int $vaoB): ?int
+    {
+        require_once __DIR__ . '/Potencia.php';
+
+        $temA = false;
+        $temB = false;
+        foreach (Potencia::comSinal($caixaId) as $chave => $dbm) {
+            $p = explode(':', $chave);
+            if (($p[0] ?? '') !== 'VAO_FIBRA') {
+                continue;
+            }
+            if ((int) ($p[1] ?? 0) === $vaoA) { $temA = true; }
+            if ((int) ($p[1] ?? 0) === $vaoB) { $temB = true; }
+        }
+        if ($temA !== $temB) {
+            return $temA ? $vaoA : $vaoB;
+        }
+
+        $saltosA = self::saltosAteODC($caixaId, $vaoA);
+        $saltosB = self::saltosAteODC($caixaId, $vaoB);
+        if ($saltosA === $saltosB) {
+            return null;
+        }
+        if ($saltosA === null) { return $vaoB; }
+        if ($saltosB === null) { return $vaoA; }
+        return $saltosA < $saltosB ? $vaoA : $vaoB;
+    }
+
+    /**
+     * Quantos trechos de cabo separam esta caixa de um DC, começando pelo vão indicado.
+     * Caminha pela planta (caixas e vãos), não pelas fusões: serve justamente para quando
+     * ainda não há fibra ligada. Devolve null se aquele lado não leva a nenhum DC.
+     */
+    private static function saltosAteODC(int $caixaId, int $vaoInicial): ?int
+    {
+        $vao = Db::um('SELECT caixa_ini_id, caixa_fim_id FROM tab_ftth_cabo_vao
+                        WHERE id = ? AND excluido_em IS NULL', [$vaoInicial]);
+        if (!$vao) {
+            return null;
+        }
+        $proxima = (int) $vao['caixa_ini_id'] === $caixaId
+            ? (int) $vao['caixa_fim_id']
+            : (int) $vao['caixa_ini_id'];
+
+        $vistas = [$caixaId => true];
+        $fila   = [[$proxima, 1]];
+
+        while ($fila) {
+            [$atual, $saltos] = array_shift($fila);
+            if (isset($vistas[$atual])) {
+                continue;
+            }
+            $vistas[$atual] = true;
+
+            $tipo = Db::valor('SELECT tipo FROM tab_ftth_caixa WHERE id = ? AND excluido_em IS NULL', [$atual]);
+            if ($tipo === 'DC') {
+                return $saltos;
+            }
+            // Um limite baixo é suficiente: se o POP estiver a mais de 40 caixas daqui, a
+            // diferença entre os dois lados já não ajuda ninguém a ler o diagrama.
+            if ($saltos >= 40) {
+                continue;
+            }
+
+            foreach (Db::todos(
+                'SELECT caixa_ini_id, caixa_fim_id FROM tab_ftth_cabo_vao
+                  WHERE (caixa_ini_id = ? OR caixa_fim_id = ?) AND excluido_em IS NULL',
+                [$atual, $atual]) as $v) {
+                $vizinha = (int) $v['caixa_ini_id'] === $atual
+                    ? (int) $v['caixa_fim_id']
+                    : (int) $v['caixa_ini_id'];
+                if (!isset($vistas[$vizinha])) {
+                    $fila[] = [$vizinha, $saltos + 1];
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Posiciona os dois cabos de uma emenda recém-criada: o que vem do POP à esquerda, o que
+     * segue para a rua à direita e ESPELHADO, para as fibras ficarem de frente umas para as
+     * outras. É como o técnico desenharia no papel, e é o que se vê ao abrir a caixa.
+     *
+     * Nunca mexe num nó que já tem posição salva: se alguém já organizou este diagrama,
+     * a organização é dele.
+     */
+    public static function organizarEmenda(int $caixaId, int $vaoA, int $vaoB, string $usuario): void
+    {
+        $jaPosicionados = array_column(Db::todos(
+            'SELECT elemento_id FROM tab_ftth_diagrama_no WHERE caixa_id = ? AND tipo = "VAO"',
+            [$caixaId]), 'elemento_id');
+        $jaPosicionados = array_map('intval', $jaPosicionados);
+        if (in_array($vaoA, $jaPosicionados, true) || in_array($vaoB, $jaPosicionados, true)) {
+            return;
+        }
+
+        $doPop = self::vaoQueVemDoPop($caixaId, $vaoA, $vaoB) ?? $vaoA;
+        $daRua = $doPop === $vaoA ? $vaoB : $vaoA;
+
+        self::salvarLayout($caixaId, [
+            ['tipo' => 'VAO', 'elemento_id' => $doPop, 'pos_x' => 40,  'pos_y' => 40,
+             'rotacao' => 0, 'invertido' => false],
+            ['tipo' => 'VAO', 'elemento_id' => $daRua, 'pos_x' => 620, 'pos_y' => 40,
+             'rotacao' => 0, 'invertido' => true],
+        ], $usuario);
+    }
     /**
      * Grava a posição dos nós. Só os que a tela mandou — assim dois técnicos mexendo em nós
      * diferentes da mesma caixa não derrubam o trabalho um do outro.

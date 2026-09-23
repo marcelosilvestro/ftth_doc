@@ -21,6 +21,13 @@
     var pendentes = { caixas: {}, vaos: {} };
     var ultimoDesenho = null;                    // último payload, para saber quem toca quem
 
+    // Ordem de empilhamento no mapa. A caixa por cima do cabo não é estética: é o que faz o
+    // clique cair no marcador, e não na alça de edição que o Google desenha no mesmo ponto.
+    var Z_QUARENTENA = 2;   // o que ainda não é rede fica por baixo do que já é
+    var Z_CABO = 10;
+    var Z_CAIXA = 500;
+    var Z_CAIXA_ARRASTANDO = 600;
+
     /** Lado do marcador no mapa, em px. O desenho continua num viewBox de 24. */
     var PX_ICONE = 30;
 
@@ -151,7 +158,11 @@
                 icon: icone(c.tipo, c.cor, true),
                 title: c.nome,
                 draggable: modo === 'mover',
-                zIndex: pend ? 40 : undefined,
+                // A caixa fica SEMPRE acima do cabo e das alças de edição dele. As alças
+                // do Google nascem no centro da caixa, e sem isto o clique pegava a alça em
+                // vez do marcador: o técnico arrastava a ponta do cabo achando que estava
+                // arrastando a caixa.
+                zIndex: pend ? Z_CAIXA_ARRASTANDO : Z_CAIXA,
                 label: mapa.getZoom() >= ((window.FTTH_MAPA || {}).rotulo_zoom || 17)
                     ? { text: c.nome, fontSize: '11px', color: '#22303F', className: 'ftth-rotulo' }
                     : null
@@ -170,7 +181,8 @@
                 // A ponta dos cabos acompanha na tela enquanto se arrasta; no banco quem
                 // faz isso é o Caixa::mover, na hora do Concluir.
                 m.addListener('drag', function (ev) {
-                    pendentes.caixas[c.id] = { lat: ev.latLng.lat(), lng: ev.latLng.lng() };
+                    pendentes.caixas[c.id] = { lat: ev.latLng.lat(), lng: ev.latLng.lng(),
+                                               nome: c.nome };
                     arrastarPontasNaTela(c.id);
                 });
                 m.addListener('dragend', function () {
@@ -186,32 +198,43 @@
         // sem dizer por quê.
         var editaveis = modo === 'mover' && d.vaos.length <= LIMITE_EDITAVEIS;
         if (modo === 'mover') {
+            // Os pontos menores e mais claros no meio de cada trecho são as alças do próprio
+            // Google: arrastar uma delas cria vértice. Dizer isso evita que elas sejam lidas
+            // como "vértices que apareceram sozinhos" depois de mexer no cabo.
             $('#mover-dica').text(editaveis
-                ? 'Arraste caixas e vértices. Botão direito na linha insere, no vértice remove.'
+                ? 'Arraste caixas e vértices. Os pontos claros no meio do trecho criam vértice. '
+                  + 'Botão direito: na linha insere, no vértice remove.'
                 : d.vaos.length + ' cabos na tela: aproxime para editar os traçados. '
                   + 'As caixas continuam arrastáveis.');
         }
 
         if (camadas.CABOS) {
             d.vaos.forEach(function (v) {
-                var caminho = (v.vertices || []).map(function (p) {
-                    return { lat: parseFloat(p[0]), lng: parseFloat(p[1]) };
-                });
-                if (caminho.length < 2) return;
-                if (pendentes.vaos[v.id]) {
-                    caminho = pendentes.vaos[v.id].map(function (p) {
-                        return { lat: p[0], lng: p[1] };
-                    });
-                }
+                // pontosDoVao é quem sabe montar o traçado de verdade: ele aplica o vértice
+                // arrastado à mão E a ponta da caixa que está sendo movida. Desenhar direto de
+                // v.vertices fazia o cabo voltar para o lugar antigo a cada zoom, enquanto a
+                // caixa ficava onde o técnico soltou.
+                var pts = pontosDoVao(v);
+                if (pts.length < 2) return;
+                var caminho = pts.map(function (p) { return { lat: p[0], lng: p[1] }; });
                 var l = new google.maps.Polyline({
                     path: caminho, map: mapa,
                     strokeColor: v.cor_rota || '#00E676',
                     strokeWeight: (window.FTTH_MAPA || {}).cabo_espessura || 5,
-                    strokeOpacity: 0.95
+                    strokeOpacity: 0.95,
+                    cursor: cursorDoCabo(),
+                    zIndex: Z_CABO
                 });
                 l.ftthVaoId = v.id;      // para o modo Mover achar a linha deste vão
                 l.addListener('click', function (e) {
                     if (modo === 'mover') return;   // no modo Mover o clique é para editar
+                    // Nos modos de desenho, clicar no cabo é clicar no mapa: a polilinha tem
+                    // 5 px de espessura e engolia o clique, abrindo a ficha do cabo bem na
+                    // hora em que o técnico queria marcar uma caixa em cima dele.
+                    if (modo === 'caixa' || modo === 'cabo') {
+                        cliqueNoMapa(e);
+                        return;
+                    }
                     abrirCabo(v, e.latLng);
                 });
                 if (modo === 'mover' && editaveis) {
@@ -229,7 +252,7 @@
                         map: mapa,
                         icon: icone(q.subtipo, q.cor, false),
                         title: (q.nome || '') + ' — não revisado',
-                        zIndex: 1
+                        zIndex: Z_QUARENTENA
                     });
                     m.addListener('click', function () { abrirQuarentena(q); });
                     quarentenaObj.push(m);
@@ -242,7 +265,8 @@
                         path: caminho, map: mapa,
                         strokeColor: q.cor || '#9E9E9E',
                         strokeWeight: (window.FTTH_MAPA || {}).cabo_espessura_q || 4,
-                        strokeOpacity: 0.4
+                        strokeOpacity: 0.4,
+                        zIndex: Z_QUARENTENA
                     });
                     l.addListener('click', function () { abrirQuarentena(q); });
                     quarentenaObj.push(l);
@@ -386,7 +410,7 @@
                      +      parseFloat(c.lat).toFixed(6) + ', ' + parseFloat(c.lng).toFixed(6) + '</span> '
                      +      '<button class="ftth-copiar" id="fc-copiar" title="Copiar">copiar</button></p>'
                      +  '</div>'
-                     +  '<div id="fc-saida"></div>';
+                     +  '';
 
                 painel(html);
             },
@@ -425,11 +449,49 @@
         return v ? esc(v) : '—';
     }
 
+    /**
+     * Excluir caixa — com um desvio quando ela é só uma emenda no meio de um cabo.
+     *
+     * Nesse caso, apagar a caixa sem mais nada deixaria o cabo partido em dois lances que não
+     * se encontram. Então o servidor é consultado antes: se a caixa só faz as fibras passarem
+     * entre dois trechos do mesmo cabo, a exclusão junta os trechos de volta num lance só — e
+     * isso é dito ao operador antes, porque excluir caixa e reescrever cabo são duas coisas.
+     */
     function excluirCaixa(id, versao, nome) {
         var cfg = window.FTTH_MAPA || {};
-        if (!confirm('Excluir a caixa "' + nome + '"?\n\nEla sai do mapa, mas continua no histórico.')) {
-            return;
-        }
+
+        FTTH.chamar({
+            url: 'mapa.php?ajax=emenda_simples&caixa=' + id,
+            onOk: function (d) {
+                var e = d && d.emenda;
+                if (e) {
+                    var metros = Number(e.metros).toFixed(1).replace('.', ',');
+                    var msg = 'A caixa "' + nome + '" só emenda os dois trechos do cabo '
+                            + (e.cabo_nome ? '"' + e.cabo_nome + '"' : e.nome_ini + ' → ' + e.nome_fim)
+                            + '.\n\nExcluir vai juntar os trechos num lance único de ' + metros + ' m'
+                            + (e.ligacoes ? ', desfazendo as ' + e.ligacoes + ' passagens desta caixa' : '')
+                            + '.\n\nConfirma?';
+                    if (!confirm(msg)) return;
+                    unirEExcluir(id, versao, nome, e);
+                    return;
+                }
+                if (!confirm('Excluir a caixa "' + nome + '"?\n\nEla sai do mapa, mas continua no histórico.')) {
+                    return;
+                }
+                excluirCaixaMesmo(id, versao);
+            },
+            // Se a consulta falhar, segue o caminho normal: o servidor recusa se não puder.
+            onErro: function () {
+                if (!confirm('Excluir a caixa "' + nome + '"?\n\nEla sai do mapa, mas continua no histórico.')) {
+                    return;
+                }
+                excluirCaixaMesmo(id, versao);
+            }
+        });
+    }
+
+    function excluirCaixaMesmo(id, versao) {
+        var cfg = window.FTTH_MAPA || {};
         FTTH.chamar({
             url: 'mapa.php?ajax=excluir_caixa',
             method: 'POST',
@@ -437,10 +499,28 @@
             onOk: function () {
                 $('#painel').hide();
                 carregar();
+                FTTH.toast('ok', 'Caixa excluída.');
             },
-            onErro: function (m) {
-                $('#fc-saida').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
-            }
+            // O recado vai para o toast, e não para dentro da ficha: a ficha fecha, o toast
+            // fica onde o operador está olhando.
+            onErro: function (m) { FTTH.toast('erro', m); }
+        });
+    }
+
+    function unirEExcluir(id, versao, nome, emenda) {
+        var cfg = window.FTTH_MAPA || {};
+        FTTH.chamar({
+            url: 'mapa.php?ajax=unir_vaos',
+            method: 'POST',
+            data: { csrf: cfg.csrf, caixa: id, versao: versao },
+            onOk: function (d) {
+                $('#painel').hide();
+                carregar();
+                FTTH.toast('ok', nome + ' excluída e o cabo voltou a ser um lance só: '
+                    + Number(d.metros).toFixed(1).replace('.', ',') + ' m entre '
+                    + d.nome_ini + ' e ' + d.nome_fim + '.');
+            },
+            onErro: function (m) { FTTH.toast('erro', m); }
         });
     }
 
@@ -1060,10 +1140,17 @@
             onOk: function (d) {
                 $('#modal-cabo').hide();
                 limparTracado();
+                $('#cb-nome').val(''); $('#cb-fabricante').val('');
+                // Gravou: o desenho acabou e o mapa volta para o modo Navegar. Antes o modo
+                // Cabo continuava ligado sem o card na tela, e o próximo traçado começava
+                // sem contador, sem dica e sem os botões.
+                definirModo('navegar');
+                // A troca de modo não redesenha sozinha (só a entrada no modo edição faz
+                // isso), e sem esta linha o cabo recém-criado só aparecia no próximo
+                // movimento do mapa.
                 carregar();
                 FTTH.toast('ok', d.tipo + ' criado: ' + d.vaos.length + ' vão(s), '
-                    + Math.round(d.metros) + ' m. Clique numa caixa para o próximo.');
-                $('#cb-nome').val(''); $('#cb-fabricante').val('');
+                    + Math.round(d.metros) + ' m.');
             },
             onErro: function (m) {
                 $('#cb-saida').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
@@ -1095,6 +1182,9 @@
             mapa.setOptions({
                 draggableCursor: (novo === 'caixa' || novo === 'cabo') ? 'crosshair' : null
             });
+            // A mãozinha em cima do cabo promete abrir a ficha. Nos modos de desenho o
+            // clique ali marca ponto, então o cursor tem de dizer a mesma coisa que o mapa.
+            linhas.forEach(function (l) { l.setOptions({ cursor: cursorDoCabo() }); });
         }
 
         if (novo === 'caixa') {
@@ -1156,15 +1246,32 @@
      * servidor faz. Assim arrastar uma caixa com três cabos não vira "4 alterações": a
      * alteração é uma só, a da caixa, e os cabos apenas acompanham.
      */
+    /**
+     * Onde a caixa está agora: a posição arrastada, se houver, senão a do último desenho.
+     * É a única fonte de verdade para as pontas de cabo — nunca o traçado guardado, que é
+     * justamente o que pode estar torto depois de um arrasto acidental na alça da ponta.
+     */
+    function posicaoDaCaixa(caixaId) {
+        var pend = pendentes.caixas[caixaId];
+        if (pend) return [pend.lat, pend.lng];
+        var achada = null;
+        ((ultimoDesenho && ultimoDesenho.caixas) || []).forEach(function (c) {
+            if (Number(c.id) === Number(caixaId)) {
+                achada = [parseFloat(c.lat), parseFloat(c.lng)];
+            }
+        });
+        return achada;
+    }
+
     function pontosDoVao(v) {
         var pts = (pendentes.vaos[v.id] || (v.vertices || []).map(function (p) {
             return [parseFloat(p[0]), parseFloat(p[1])];
         })).slice();
 
-        var ini = pendentes.caixas[v.caixa_ini_id];
-        var fim = pendentes.caixas[v.caixa_fim_id];
-        if (ini) pts[0] = [ini.lat, ini.lng];
-        if (fim && pts.length > 1) pts[pts.length - 1] = [fim.lat, fim.lng];
+        var ini = posicaoDaCaixa(v.caixa_ini_id);
+        var fim = posicaoDaCaixa(v.caixa_fim_id);
+        if (ini) pts[0] = ini;
+        if (fim && pts.length > 1) pts[pts.length - 1] = fim;
         return pts;
     }
 
@@ -1179,28 +1286,58 @@
         var caminho = linha.getPath();
         var ajustando = false;   // setAt dentro do próprio listener dispara ele de novo
 
+        /**
+         * Grava a pendência. Só LÊ a polilinha: as pontas são trocadas no array que vai para
+         * `pendentes`, nunca no path.
+         *
+         * Mexer no path de dentro de um listener do próprio path deixa o editor do Google em
+         * estado inconsistente — dava "Cannot read properties of undefined" no meio de um
+         * insertAt e fazia aparecer vértice fantasma no cabo.
+         */
         var gravar = function () {
             var pts = [];
             caminho.forEach(function (p) { pts.push([p.lat(), p.lng()]); });
+            var ini = posicaoDaCaixa(v.caixa_ini_id);
+            var fim = posicaoDaCaixa(v.caixa_fim_id);
+            if (ini) pts[0] = ini;
+            if (fim && pts.length > 1) pts[pts.length - 1] = fim;
             pendentes.vaos[v.id] = pts;
             atualizarContaMover();
         };
 
-        // A ponta pertence à caixa: arrastá-la descolaria o cabo. Em vez de bloquear o
-        // arraste (o Google não permite travar um vértice só), ela volta para o lugar.
+        /**
+         * Devolve as pontas para cima das caixas — depois que o Google terminar o que estava
+         * fazendo. O setTimeout(0) é o que separa a nossa correção do evento dele.
+         */
+        var colarPontasDepois = function () {
+            setTimeout(function () {
+                var ultimo = caminho.getLength() - 1;
+                if (ultimo < 1) return;
+                var ini = posicaoDaCaixa(v.caixa_ini_id);
+                var fim = posicaoDaCaixa(v.caixa_fim_id);
+                ajustando = true;
+                if (ini) caminho.setAt(0, new google.maps.LatLng(ini[0], ini[1]));
+                if (fim) caminho.setAt(ultimo, new google.maps.LatLng(fim[0], fim[1]));
+                ajustando = false;
+                gravar();
+            }, 0);
+        };
+
+        // A ponta pertence à caixa: arrastá-la descolaria o cabo. O Google não deixa travar um
+        // vértice só, então ela volta sozinha para cima da caixa.
         caminho.addListener('set_at', function (i) {
             if (ajustando) return;
             var ultimo = caminho.getLength() - 1;
             if (i === 0 || i === ultimo) {
-                var fixo = pontosDoVao(v)[i];
-                ajustando = true;
-                caminho.setAt(i, new google.maps.LatLng(fixo[0], fixo[1]));
-                ajustando = false;
-                FTTH.toast('info', 'A ponta do cabo acompanha a caixa — mova a caixa.');
+                colarPontasDepois();
+                FTTH.toast('info', 'A ponta do cabo mora na caixa — para movê-la, arraste a caixa.');
                 return;
             }
             gravar();
         });
+        // Criar e remover vértice não avisam nada: quem arrasta a alça vê o ponto nascer, e
+        // um toast a cada gesto atrapalha mais do que explica. O que a alça clara faz está
+        // dito na dica do card, que fica à vista o tempo todo.
         caminho.addListener('insert_at', gravar);
         caminho.addListener('remove_at', gravar);
 
@@ -1269,6 +1406,10 @@
         var vaos = Object.keys(pendentes.vaos).map(function (id) {
             return { id: parseInt(id, 10), vertices: pendentes.vaos[id] };
         });
+        var nomesMovidos = {};
+        Object.keys(pendentes.caixas).forEach(function (id) {
+            nomesMovidos[id] = pendentes.caixas[id].nome;
+        });
         if (!caixas.length && !vaos.length) return;
 
         var $b = $('#mover-concluir').prop('disabled', true);
@@ -1277,16 +1418,43 @@
             method: 'POST',
             data: { csrf: cfg.csrf, caixas: JSON.stringify(caixas), vaos: JSON.stringify(vaos) },
             onOk: function (d) {
+                // Guarda antes de limpar: a oferta de emenda precisa saber onde cada caixa parou.
+                var movidas = caixas.map(function (c) {
+                    return { id: c.id, nome: nomesMovidos[c.id] || 'A caixa',
+                             lat: c.lat, lng: c.lng };
+                });
                 pendentes = { caixas: {}, vaos: {} };
-                atualizarContaMover();
-                carregar();
+                // Gravou: a edição acabou. O card se fecha e o mapa volta ao modo Navegar,
+                // que é onde o técnico confere o resultado do que acabou de fazer.
+                definirModo('navegar');
                 FTTH.toast('ok', 'Mapa atualizado: ' + d.caixas + ' caixa(s) e '
                     + d.vaos + ' traçado(s). Os comprimentos foram recalculados.');
+                oferecerEmendaEmFila(movidas);
             },
             // Nada foi gravado — o lote é uma transação só —, então as pendências ficam
             // na tela para o usuário corrigir em vez de perder o trabalho.
             onErro: function (m) { FTTH.toast('erro', m); }
         }).always(function () { $b.prop('disabled', contarPendentes() === 0); });
+    }
+
+    /**
+     * O que um clique no mapa faz, por modo. Vive numa função só porque o clique pode chegar
+     * de dois lugares: do mapa e de cima de um cabo, que é um objeto por cima do mapa.
+     */
+    function cursorDoCabo() {
+        return (modo === 'caixa' || modo === 'cabo') ? 'crosshair' : 'pointer';
+    }
+
+    function cliqueNoMapa(e) {
+        if (modo === 'caixa') {
+            marcarPonto(e.latLng);
+            return;
+        }
+        if (modo === 'cabo') {
+            pontoTracado({ tipo: 'VERTICE', lat: e.latLng.lat(), lng: e.latLng.lng() });
+            return;
+        }
+        $('#painel').hide();
     }
 
     function limparPin() {
@@ -1303,7 +1471,9 @@
             icon: icone(tipoSelecionado(), corSelecionada(), true)
         });
         $('#nc-ponto').text('Ponto: ' + latLng.lat().toFixed(6) + ', ' + latLng.lng().toFixed(6));
-        abrirModalCaixa();
+        // Clicou em cima de um cabo? A pergunta vem agora, antes do cadastro: a decisão é
+        // sobre o ponto, e escolher o tipo da caixa depois é o passo natural.
+        perguntarEmendaNoClique(latLng, abrirModalCaixa);
     }
 
     function tipoSelecionado() { return $('.ftth-tipo.ativo').data('tipo') || 'CTO'; }
@@ -1425,12 +1595,24 @@
                 limparPin();
                 $('#modal-caixa').hide();
                 carregar();
-                if (sequencia) {
-                    // Continua no modo Caixa: o próximo clique já marca a caixa seguinte.
-                    FTTH.toast('ok', nome + ' criada. Clique no mapa para a próxima.');
+
+                var seguir = function () {
+                    if (sequencia) {
+                        // Continua no modo Caixa: o próximo clique já marca a caixa seguinte.
+                        FTTH.toast('ok', nome + ' criada. Clique no mapa para a próxima.');
+                    } else {
+                        definirModo('navegar');
+                        abrirFicha(d.id);
+                    }
+                };
+
+                // A emenda já foi decidida no clique; agora que a caixa existe, aplicamos.
+                if (emendaDesejada) {
+                    var vao = emendaDesejada.vao;
+                    emendaDesejada = null;
+                    aplicarEmenda(vao, d.id, seguir);
                 } else {
-                    definirModo('navegar');
-                    abrirFicha(d.id);
+                    seguir();
                 }
             },
             onErro: function (m) {
@@ -1503,17 +1685,7 @@
 
         // Clique no mapa (fora de qualquer item): ancora a caixa em espera, ou fecha a ficha.
         // Clique em marcador ou em cabo não chega aqui.
-        mapa.addListener('click', function (e) {
-            if (modo === 'caixa') {
-                marcarPonto(e.latLng);
-                return;
-            }
-            if (modo === 'cabo') {
-                pontoTracado({ tipo: 'VERTICE', lat: e.latLng.lat(), lng: e.latLng.lng() });
-                return;
-            }
-            $('#painel').hide();
-        });
+        mapa.addListener('click', cliqueNoMapa);
 
         $('.ftth-modo').on('click', function () {
             if ($(this).prop('disabled')) return;
@@ -1539,10 +1711,11 @@
             atualizarTracado();
         });
         $('#cabo-finalizar').on('click', finalizarTracado);
+        // Cancelar é o par do Finalizar, como no modo edição: os dois encerram o desenho.
         $('#cabo-cancelar').on('click', function () {
-            if (tracado.length && !confirm('Descartar o traçado?')) return;
+            if (tracado.length && !confirm('Descartar o traçado e sair do modo Cabo?')) return;
             limparTracado();
-            iniciarTracado();
+            definirModo('navegar');
         });
         $('#cb-salvar').on('click', salvarCabo);
         $('#cb-cancelar, #cabo-modal-fechar').on('click', function () {
@@ -1582,6 +1755,8 @@
                 editando = null;          // saiu da edição: o mapa continua como estava
                 return;
             }
+            // Desistiu da caixa: a emenda que ele tinha aceitado no clique morre junto.
+            emendaDesejada = null;
             limparPin();
             FTTH.toast('info', 'Clique no mapa para marcar o ponto da caixa.');
         });
@@ -1671,12 +1846,13 @@
         });
 
         $('#mover-concluir').on('click', concluirMover);
+        // Cancelar é o par do Concluir: os dois encerram a edição. Sair sem gravar volta o
+        // mapa ao que está no banco — por isso o aviso quando há trabalho na tela.
         $('#mover-descartar').on('click', function () {
             if (contarPendentes() > 0
-                && !confirm('Descartar as alterações do mapa?')) { return; }
-            sairDoModoMover();
-            $('#mover-card').show();     // continua no modo, só sem pendências
-            atualizarContaMover();
+                && !confirm('Descartar as alterações do mapa e sair do modo edição?')) { return; }
+            sairDoModoMover();          // zera as pendências e redesenha do banco
+            definirModo('navegar');     // sem pendências, não pergunta de novo
         });
 
         $('#btn-camadas').on('click', function (ev) {
@@ -1738,9 +1914,8 @@
             FTTH.chamar({
                 url: 'mapa.php?ajax=ficha&id=' + id,
                 onOk: abrirModalEdicao,
-                onErro: function (m) {
-                    $('#fc-saida').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
-                }
+                // Recado de erro vai para o toast: a ficha pode fechar, o toast fica.
+                onErro: function (m) { FTTH.toast('erro', m); }
             });
         });
 
@@ -1752,4 +1927,138 @@
             decidirQuarentena(parseInt($(this).data('id'), 10), 'descartar');
         });
     };
+    /* ---------------------------------------------------------------- emendar no cabo
+     *
+     * O cabo quase sempre é lançado antes das caixas serem documentadas, e num rompimento
+     * entram duas caixas de emenda no meio de um vão que já existe. Em vez de apagar e
+     * redesenhar o cabo, o técnico marca a caixa em cima dele e o mapa oferece a emenda.
+     *
+     * Oferece, não faz: uma caixa pode cair perto do cabo sem ter nada a ver com ele — um
+     * poste na mesma calçada, por exemplo. Quem sabe é quem está em campo.
+     *
+     * A pergunta aparece em dois momentos, e a diferença entre eles é de propósito:
+     *
+     *   ao CLICAR para criar   a decisão é sobre o ponto, e vem antes do cadastro: quem
+     *                          clicou em cima do cabo já sabe o que quer, e escolher o tipo
+     *                          da caixa depois é o passo natural. A emenda é aplicada assim
+     *                          que a caixa nasce.
+     *   ao MOVER uma caixa     só dá para perguntar depois de gravar, porque o lote de
+     *                          movimentos é uma transação só.
+     */
+    var emendaAtiva = null;      // o que o botão "Emendar" desta vez deve fazer
+    var emendaDesejada = null;   // vão escolhido no clique, aplicado quando a caixa nascer
+
+    /** Pergunta ao servidor se este ponto cai sobre algum cabo. */
+    function consultarVaoSobPonto(lat, lng, caixaId, aoResponder) {
+        FTTH.chamar({
+            url: 'mapa.php?ajax=vao_sob_ponto&regiao=' + regiao
+                 + '&lat=' + lat + '&lng=' + lng
+                 + (caixaId ? '&caixa=' + caixaId : ''),
+            onOk: function (d) { aoResponder(d && d.vao ? d : null); },
+            // Não achar o cabo nunca pode atrapalhar quem só queria marcar uma caixa.
+            onErro: function () { aoResponder(null); }
+        });
+    }
+
+    function abrirModalEmenda(texto, rotuloSim, rotuloNao, aoSim, aoNao) {
+        emendaAtiva = { aoSim: aoSim, aoNao: aoNao };
+        $('#em-texto').html(texto);
+        $('#em-sim').text(rotuloSim).prop('disabled', false);
+        $('#em-nao').text(rotuloNao).prop('disabled', false);
+        $('#em-saida').empty();
+        $('#modal-emenda').show();
+    }
+
+    function fecharModalEmenda() {
+        emendaAtiva = null;
+        $('#modal-emenda').hide();
+    }
+
+    function textoDoCabo(d) {
+        return 'a <strong>' + Number(d.distancia_m).toFixed(1).replace('.', ',')
+             + ' m</strong> do cabo <strong>' + esc(d.cabo_nome || 'sem nome')
+             + '</strong> (' + esc(d.cabo_tipo) + ')';
+    }
+
+    /**
+     * Modo Caixa: o clique caiu sobre um cabo? Pergunta antes de abrir o cadastro e guarda a
+     * resposta; o cadastro segue igual, e a emenda acontece logo depois de a caixa nascer.
+     */
+    function perguntarEmendaNoClique(latLng, aoTerminar) {
+        emendaDesejada = null;
+        consultarVaoSobPonto(latLng.lat(), latLng.lng(), null, function (d) {
+            if (!d) { aoTerminar(); return; }
+            abrirModalEmenda(
+                'Você clicou ' + textoDoCabo(d) + '. Quer emendar o cabo na caixa que vai criar aqui?',
+                'Emendar no cabo', 'Só criar a caixa',
+                function () {
+                    emendaDesejada = { vao: d.vao, fibras: d.fibras };
+                    fecharModalEmenda();
+                    aoTerminar();
+                },
+                function () { fecharModalEmenda(); aoTerminar(); }
+            );
+        });
+    }
+
+    /** Modo Mover: a caixa já existe e já foi gravada onde parou. */
+    function oferecerEmenda(caixaId, nomeCaixa, lat, lng, aoTerminar) {
+        consultarVaoSobPonto(lat, lng, caixaId, function (d) {
+            if (!d) { if (aoTerminar) aoTerminar(); return; }
+            abrirModalEmenda(
+                esc(nomeCaixa) + ' parou ' + textoDoCabo(d) + '. Este cabo passa por aqui — '
+                + 'quer emendá-lo nesta caixa?',
+                'Emendar no cabo', 'Deixar solta',
+                function () { aplicarEmenda(d.vao, caixaId, aoTerminar); },
+                function () { fecharModalEmenda(); if (aoTerminar) aoTerminar(); }
+            );
+        });
+    }
+
+    /** Quebra o vão de verdade. O servidor é quem decide se dá: aqui só mostramos o resultado. */
+    function aplicarEmenda(vaoId, caixaId, aoTerminar) {
+        var cfg = window.FTTH_MAPA || {};
+        $('#em-sim, #em-nao').prop('disabled', true);
+        FTTH.chamar({
+            url: 'mapa.php?ajax=quebrar_vao',
+            method: 'POST',
+            data: { csrf: cfg.csrf, vao: vaoId, caixa: caixaId },
+            onOk: function (d) {
+                fecharModalEmenda();
+                carregar();
+                FTTH.toast('ok', 'Cabo emendado: dois trechos de '
+                    + Math.round(d.metros_a) + ' m e ' + Math.round(d.metros_b) + ' m, com '
+                    + d.fibras_passando + ' fibra(s) passando pela caixa.');
+                if (aoTerminar) aoTerminar();
+            },
+            onErro: function (m) {
+                // Com o modal aberto, o erro fica onde o usuário está olhando; sem ele
+                // (emenda automática depois do cadastro), vai para o toast.
+                if ($('#modal-emenda').is(':visible')) {
+                    $('#em-saida').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
+                    $('#em-sim, #em-nao').prop('disabled', false);
+                } else {
+                    FTTH.toast('erro', 'A caixa foi criada, mas não deu para emendar o cabo: ' + m);
+                    if (aoTerminar) aoTerminar();
+                }
+            }
+        });
+    }
+
+    $('#em-fechar').on('click', function () {
+        var fn = emendaAtiva && emendaAtiva.aoNao;
+        fecharModalEmenda();
+        if (fn) fn();
+    });
+    $('#em-nao').on('click', function () { if (emendaAtiva) emendaAtiva.aoNao(); });
+    $('#em-sim').on('click', function () { if (emendaAtiva) emendaAtiva.aoSim(); });
+
+    /** Pergunta uma caixa de cada vez, para o operador não ver dois modais empilhados. */
+    function oferecerEmendaEmFila(lista) {
+        if (!lista.length) return;
+        var atual = lista.shift();
+        oferecerEmenda(atual.id, atual.nome, atual.lat, atual.lng, function () {
+            oferecerEmendaEmFila(lista);
+        });
+    }
 })();

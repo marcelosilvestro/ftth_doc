@@ -4,7 +4,7 @@ Addon para MK-AUTH que documenta a planta FTTH: caixas e cabos no mapa, importa�
 projeto, diagrama de emendas de cada CEO/CTO, POP com OLT e DIO, e cálculo de potência do sinal
 que chega em cada cliente.
 
-> **Versão 0.9.1 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
+> **Versão 0.9.2 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
 > primeira versão publicada. Instale primeiro num servidor de teste.
 
 ## Instalação
@@ -46,11 +46,35 @@ wget -O - https://raw.githubusercontent.com/marcelosilvestro/ftth_doc/main/insta
 wget -O - .../instalar.sh | bash -s -- --diagnostico
 
 # instalar uma versão específica
-wget -O - .../instalar.sh | bash -s -- --versao=v0.9.1
+wget -O - .../instalar.sh | bash -s -- --versao=v0.9.2
 
 # remover as tabelas que o addon aposentou
 wget -O - .../instalar.sh | bash -s -- --limpar
 ```
+
+## Emendar uma caixa num cabo já lançado
+
+O cabo quase sempre é lançado antes de as caixas serem documentadas, e num rompimento entram
+duas caixas de emenda no meio de um lance existente. Para isso não é preciso apagar e
+redesenhar o cabo: **solte a caixa em cima dele**.
+
+- No modo **Caixa**, clique sobre o traçado: o addon pergunta se você quer emendar antes de
+  abrir o cadastro da caixa.
+- No modo **Mover**, arraste uma caixa existente para cima do cabo: a pergunta vem depois do
+  Concluir.
+
+Confirmando, o cabo é cortado em dois trechos que passam a chegar na caixa, ela encosta no
+traçado e todas as fibras atravessam como **passagem** (perda zero) — o sinal dos clientes
+continua batendo no mesmo instante. No diagrama da caixa você troca por fusão ou sangria o que
+precisar; ele já abre com o cabo que vem do POP à esquerda e o que segue para a rua à direita.
+
+O caminho de volta existe: ao **excluir** uma caixa que só faz essa emenda, o addon avisa que
+vai juntar os dois trechos num lance só e faz isso — preservando o que já estava fundido nas
+pontas. Caixa com splitter, DIO ou fusão cruzada não entra nessa conta, porque aí ela tem
+função de verdade.
+
+A distância em que o mapa considera que a caixa caiu "em cima" do cabo é ajustável em
+*Configurações → Raio de emenda*, e começa em 10 m.
 
 ## Como começar a usar
 

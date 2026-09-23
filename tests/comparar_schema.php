@@ -112,19 +112,38 @@ if ($soRef || $soNovo) {
 }
 
 [$soRef, $soNovo] = diferencas($seedsRef, $seedsNovo);
-// A descrição das chaves de config pode ter melhorado de propósito no baseline; o que não
-// pode mudar é a chave existir e o valor de fábrica.
-if ($soRef || $soNovo) {
-    $problemas += count($soRef) + count($soNovo);
+
+// Seed é diferente de schema: o baseline ganha chaves novas a cada versão, e isso é a vida
+// normal do produto. Regressão seria uma linha SUMIR ou um valor de fábrica MUDAR — aí alguém
+// mexeu no passado sem querer. Acréscimo aparece como informação, não como falha.
+$identidade = static function (string $linha): string {
+    return explode(' | ', $linha)[0];   // "config raio_quebra_cabo_m", "cabo_tipo Drop (1 FO)"...
+};
+$idsRef = array_map($identidade, $seedsRef);
+$acrescentados = [];
+$alterados     = [];
+foreach ($soNovo as $l) {
+    if (in_array($identidade($l), $idsRef, true)) {
+        $alterados[] = $l;
+    } else {
+        $acrescentados[] = $l;
+    }
+}
+
+if ($soRef || $alterados) {
+    $problemas += count($soRef) + count($alterados);
     echo "\n\033[31mDIVERGENCIAS DE SEED\033[0m\n";
     foreach ($soRef as $l) {
-        echo "  so nas migrations antigas : $l\n";
+        echo "  sumiu do baseline : $l\n";
     }
-    foreach ($soNovo as $l) {
-        echo "  so no baseline            : $l\n";
+    foreach ($alterados as $l) {
+        echo "  valor mudou       : $l\n";
     }
 } else {
-    echo "  \033[32mok\033[0m  seeds identicos (" . count($seedsRef) . " linhas conferidas)\n";
+    echo "  \033[32mok\033[0m  seeds sem regressao (" . count($seedsRef) . " linhas conferidas)\n";
+}
+foreach ($acrescentados as $l) {
+    echo "  \033[33m..\033[0m  acrescentado depois da consolidacao: $l\n";
 }
 
 // ------------------------------------------------------------------ idempotência

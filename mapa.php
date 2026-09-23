@@ -55,6 +55,33 @@ if (isset($_GET['ajax'])) {
                     ['capacidade' => ($_POST['capacidade'] ?? '') !== '' ? (int) $_POST['capacidade'] : null]
                 )->enviar();
 
+            // Você soltou a caixa em cima de um cabo? Consulta pura: quem decide emendar é o
+            // usuário, na confirmação que a tela mostra com estes dados.
+            case 'vao_sob_ponto':
+                $achado = Cabo::vaoSobPonto(
+                    (int) ($_GET['regiao'] ?? 0),
+                    (float) ($_GET['lat'] ?? 0),
+                    (float) ($_GET['lng'] ?? 0),
+                    ($_GET['caixa'] ?? '') !== '' ? (int) $_GET['caixa'] : null
+                );
+                Resultado::ok($achado === null ? ['vao' => null] : [
+                    'vao'         => (int) $achado['vao']['id'],
+                    'cabo'        => (int) $achado['vao']['cabo_id'],
+                    'cabo_nome'   => $achado['vao']['cabo_nome'],
+                    'cabo_tipo'   => $achado['vao']['cabo_tipo'],
+                    'fibras'      => (int) $achado['vao']['fibras'],
+                    'distancia_m' => $achado['projecao']['distancia_m'],
+                    'raio_m'      => Cabo::raioQuebra(),
+                ])->enviar();
+
+            case 'quebrar_vao':
+                ftth_exigir_csrf();
+                Cabo::quebrarVao(
+                    (int) ($_POST['vao'] ?? 0),
+                    (int) ($_POST['caixa'] ?? 0),
+                    $usuario_logado
+                )->enviar();
+
             case 'novo_cabo':
                 ftth_exigir_csrf();
                 $pontos = json_decode((string) ($_POST['pontos'] ?? '[]'), true);
@@ -118,6 +145,19 @@ if (isset($_GET['ajax'])) {
                     Resultado::erro('FTTH-SYS-002', ['campo' => 'movimentos'])->enviar(400);
                 }
                 Mapa::aplicarMovimentos($caixas, $vaos, $usuario_logado)->enviar();
+
+            // A caixa é só uma emenda no meio de um cabo? Consulta pura: a tela usa isto para
+            // avisar que excluir vai juntar os dois trechos, antes de fazer.
+            case 'emenda_simples':
+                Resultado::ok(['emenda' => Cabo::emendaSimples((int) ($_GET['caixa'] ?? 0))])->enviar();
+
+            case 'unir_vaos':
+                ftth_exigir_csrf();
+                Cabo::unirVaos(
+                    (int) ($_POST['caixa'] ?? 0),
+                    isset($_POST['versao']) && $_POST['versao'] !== '' ? (int) $_POST['versao'] : null,
+                    $usuario_logado
+                )->enviar();
 
             case 'excluir_caixa':
                 ftth_exigir_csrf();
@@ -333,12 +373,12 @@ include('nav/header.php');
                      usuário. Fica aqui, onde o olho já está enquanto ele desenha. -->
                 <span id="cabo-dica" class="ftth-flutuante-dica"></span>
             </div>
+            <button class="ftth-btn ftth-btn--sec" id="cabo-cancelar" title="Descartar o traçado e sair do modo Cabo">
+                <i class="bi-x-octagon-fill"></i> Cancelar</button>
             <button class="ftth-btn ftth-btn--sec" id="cabo-desfazer">
                 <i class="bi-arrow-counterclockwise"></i> Desfazer</button>
             <button class="ftth-btn ftth-btn--pri" id="cabo-finalizar">
                 <i class="bi-check-circle-fill"></i> Finalizar</button>
-            <button class="ftth-btn ftth-btn--sec ftth-acao--perigo" id="cabo-cancelar" title="Descartar traçado">
-                <i class="bi-trash3-fill"></i></button>
         </div>
 
         <!-- Card do modo Mover. Nada aqui vai para o banco antes do Concluir: o usuário
@@ -350,10 +390,11 @@ include('nav/header.php');
                     Arraste uma caixa. Clique num cabo para editar o traçado.</span>
             </div>
             <span class="ftth-flutuante-conta" id="mover-conta">nada alterado</span>
+            <button class="ftth-btn ftth-btn--sec" id="mover-descartar"
+                    title="Descartar as alterações e sair do modo edição">
+                <i class="bi-x-octagon-fill"></i> Cancelar</button>
             <button class="ftth-btn ftth-btn--pri" id="mover-concluir" disabled>
                 <i class="bi-check-circle-fill"></i> Concluir</button>
-            <button class="ftth-btn ftth-btn--sec ftth-acao--perigo" id="mover-descartar"
-                    title="Descartar as alterações"><i class="bi-trash3-fill"></i></button>
         </div>
     </div>
 </div>
@@ -462,6 +503,32 @@ include('nav/header.php');
         <div class="ftth-modal-rodape">
             <button class="ftth-btn ftth-btn--sec" id="nc-cancelar">Cancelar</button>
             <button class="ftth-btn ftth-btn--pri" id="nc-criar">Criar caixa</button>
+        </div>
+    </div>
+</div>
+
+<!-- Emendar a caixa no cabo. Aparece sozinho quando a caixa cai em cima de um traçado, porque
+     a resposta certa depende do que o técnico foi fazer: documentar uma emenda que existe na
+     rua, ou só marcar um poste que fica ao lado do cabo. Por isso ninguém decide por ele. -->
+<div id="modal-emenda" class="ftth-modal" style="display:none">
+    <div class="ftth-modal-caixa">
+        <div class="ftth-modal-topo">
+            <strong><i class="bi-scissors"></i> Emendar no cabo?</strong>
+            <button class="ftth-painel-fechar" id="em-fechar">&times;</button>
+        </div>
+        <div class="ftth-modal-corpo">
+            <p id="em-texto" style="margin:0 0 10px"></p>
+            <p class="ftth-sub" style="margin:0">
+                Se você emendar: o cabo é cortado em dois trechos que passam a chegar nesta
+                caixa, <strong>a caixa encosta no traçado</strong> e todas as fibras atravessam
+                como passagem — sem perda e sem mexer no que já estava fundido nas pontas.
+                Depois, no diagrama da caixa, você troca por fusão ou sangria o que precisar.
+            </p>
+            <div id="em-saida" style="margin-top:10px"></div>
+        </div>
+        <div class="ftth-modal-rodape">
+            <button class="ftth-btn ftth-btn--sec" id="em-nao">Deixar solta</button>
+            <button class="ftth-btn ftth-btn--pri" id="em-sim">Emendar no cabo</button>
         </div>
     </div>
 </div>

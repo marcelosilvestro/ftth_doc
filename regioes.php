@@ -80,9 +80,11 @@ include('nav/header.php');
 
     <?php if ($falha): ?><div class="ftth-aviso ftth-aviso--erro"><?= htmlspecialchars($falha) ?></div><?php endif; ?>
 
-    <!-- Cadastro numa linha só: o espaço vertical é da lista, não do formulário.
-         O título vive num span próprio porque o JS troca o texto ao editar. -->
-    <div class="ftth-card">
+    <!-- Formulário e lista lado a lado: quem cadastra região olha para as que já existem
+         enquanto digita. O título vive num span próprio porque o JS troca o texto ao editar. -->
+    <div class="ftth-duplo ftth-duplo--2por3">
+      <div>
+        <div class="ftth-card">
         <div class="ftth-card-topo">
             <h2><i class="bi-geo-fill"></i> <span id="titulo-form">Nova região</span></h2>
             <span class="ftth-sub" style="margin:0">Latitude e longitude são o centro onde o mapa abre.</span>
@@ -111,9 +113,11 @@ include('nav/header.php');
             </div>
         </div>
         <div id="saida" style="margin-top:10px"></div>
-    </div>
+        </div>
+      </div>
 
-    <div class="ftth-card">
+      <div>
+        <div class="ftth-card">
         <div class="ftth-card-topo"><h2>Cadastradas</h2></div>
         <table class="ftth-tabela" id="tabela">
             <thead><tr>
@@ -122,6 +126,8 @@ include('nav/header.php');
             </tr></thead>
             <tbody></tbody>
         </table>
+        </div>
+      </div>
     </div>
 </div>
 

@@ -18,6 +18,8 @@ require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Versao.php';
 require_once __DIR__ . '/Auditoria.php';
 require_once __DIR__ . '/Resultado.php';
+require_once __DIR__ . '/Caixa.php';
+require_once __DIR__ . '/Topologia.php';
 
 final class Cabo
 {
@@ -383,6 +385,429 @@ final class Cabo
             Db::exec('UPDATE tab_ftth_cabo SET excluido_em = NOW() WHERE id = ?', [$caboId]);
             Auditoria::registrar('cabo', $caboId, 'excluir', $cabo, null, (int) $cabo['regiao_id']);
             return Resultado::ok(['id' => $caboId]);
+        });
+    }
+
+    /**
+     * Distância em que uma caixa ainda conta como "em cima do cabo".
+     * Configurável porque depende do zoom em que o provedor trabalha e da precisão do GPS
+     * de quem levantou a planta.
+     */
+    public static function raioQuebra(): float
+    {
+        return max(1.0, Config::num('raio_quebra_cabo_m', 10.0));
+    }
+
+    /**
+     * O vão mais próximo deste ponto, dentro do raio — ou null.
+     *
+     * É o que responde "você soltou a caixa em cima de um cabo?". Devolve junto a projeção,
+     * para a tela poder dizer quantos metros a caixa vai andar antes de o usuário confirmar.
+     *
+     * @param int|null $ignorarCaixa vãos que encostam nesta caixa não contam (ela é a ponta)
+     * @return array{vao:array,projecao:array}|null
+     */
+    public static function vaoSobPonto(int $regiaoId, float $lat, float $lng,
+                                       ?int $ignorarCaixa = null): ?array
+    {
+        $raio = self::raioQuebra();
+        // Caixa grosseira em graus só para não ler a região inteira: 1 grau de latitude tem
+        // ~110,5 km, e a longitude encolhe com o cosseno. O filtro fino é a projeção.
+        $margemLat = ($raio + 50) / 110540.0;
+        $margemLng = $margemLat / max(0.2, cos($lat * M_PI / 180));
+
+        $sql = 'SELECT v.id, v.cabo_id, v.ordem, v.vertices, v.caixa_ini_id, v.caixa_fim_id,
+                       v.versao, c.nome AS cabo_nome, t.rotulo AS cabo_tipo, t.fibras
+                  FROM tab_ftth_cabo_vao v
+                  JOIN tab_ftth_cabo c      ON c.id = v.cabo_id
+                  JOIN tab_ftth_cabo_tipo t ON t.id = c.cabo_tipo_id
+                 WHERE v.regiao_id = ? AND v.excluido_em IS NULL AND c.excluido_em IS NULL';
+        $params = [$regiaoId];
+        if ($ignorarCaixa !== null) {
+            $sql .= ' AND v.caixa_ini_id <> ? AND v.caixa_fim_id <> ?';
+            $params[] = $ignorarCaixa;
+            $params[] = $ignorarCaixa;
+        }
+
+        $melhor = null;
+        foreach (Db::todos($sql, $params) as $v) {
+            $vertices = json_decode((string) $v['vertices'], true);
+            if (!is_array($vertices) || count($vertices) < 2) {
+                continue;
+            }
+            // Descarta cedo o que está claramente longe, sem projetar nada. O teste é contra a
+            // MOLDURA do vão inteiro, não contra cada vértice: num trecho de 300 m em linha
+            // reta, o ponto no meio fica a 150 m dos dois vértices e seria descartado — que
+            // foi exatamente o que aconteceu no primeiro teste com dados reais.
+            $latMin = $latMax = (float) $vertices[0][0];
+            $lngMin = $lngMax = (float) $vertices[0][1];
+            foreach ($vertices as $p) {
+                $latMin = min($latMin, (float) $p[0]);
+                $latMax = max($latMax, (float) $p[0]);
+                $lngMin = min($lngMin, (float) $p[1]);
+                $lngMax = max($lngMax, (float) $p[1]);
+            }
+            if ($lat < $latMin - $margemLat || $lat > $latMax + $margemLat
+                || $lng < $lngMin - $margemLng || $lng > $lngMax + $margemLng) {
+                continue;
+            }
+
+            $proj = Geo::projetarNaRota($vertices, $lat, $lng);
+            if ($proj === null || $proj['distancia_m'] > $raio) {
+                continue;
+            }
+            if ($melhor === null || $proj['distancia_m'] < $melhor['projecao']['distancia_m']) {
+                $melhor = ['vao' => $v, 'projecao' => $proj];
+            }
+        }
+        return $melhor;
+    }
+
+    /**
+     * Quebra um vão em dois, com a caixa no meio — e emenda o cabo nela.
+     *
+     * É o "documentar o que já está na rua": o cabo foi lançado antes, as caixas vão sendo
+     * marcadas depois; e é também o conserto de um rompimento, em que entram duas caixas de
+     * emenda e um pedaço novo de cabo.
+     *
+     * O que acontece, tudo numa transação:
+     *   1. a caixa anda até o ponto exato do cabo (o clique nunca cai na linha);
+     *   2. o vão original PRESERVA o id e vira o primeiro trecho (A → C). Isso é o que mantém
+     *      intactas as fibras já fundidas na caixa A: elas apontam para este id;
+     *   3. nasce o segundo trecho (C → B), e as pontas de ligação que estavam na caixa B
+     *      passam a apontar para ele — senão continuariam penduradas num vão que agora
+     *      termina em outro lugar;
+     *   4. comprimento e reserva são divididos na proporção de cada trecho;
+     *   5. as fibras passam direto pela caixa nova, uma a uma. Como os dois trechos são do
+     *      mesmo cabo e da mesma numeração, a topologia classifica cada ligação como
+     *      PASSAGEM, de perda zero — o sinal dos clientes continua batendo no mesmo instante.
+     */
+    public static function quebrarVao(int $vaoId, int $caixaId, string $usuario): Resultado
+    {
+        $vao = Db::um(
+            'SELECT v.*, c.cabo_tipo_id, c.nome AS cabo_nome
+               FROM tab_ftth_cabo_vao v
+               JOIN tab_ftth_cabo c ON c.id = v.cabo_id
+              WHERE v.id = ? AND v.excluido_em IS NULL', [$vaoId]);
+        if (!$vao) {
+            return Resultado::erro('FTTH-TOP-002', ['vao' => $vaoId]);
+        }
+
+        $caixa = Db::um('SELECT * FROM tab_ftth_caixa WHERE id = ? AND excluido_em IS NULL', [$caixaId]);
+        if (!$caixa) {
+            return Resultado::erro('FTTH-TOP-001', ['caixa' => $caixaId]);
+        }
+        if ((int) $caixa['regiao_id'] !== (int) $vao['regiao_id']) {
+            return Resultado::erro('FTTH-SYS-002', ['caixa' => $caixaId, 'vao' => $vaoId],
+                'A caixa e o cabo são de regiões diferentes.');
+        }
+        if ((int) $vao['caixa_ini_id'] === $caixaId || (int) $vao['caixa_fim_id'] === $caixaId) {
+            return Resultado::erro('FTTH-SYS-002', ['caixa' => $caixaId, 'vao' => $vaoId],
+                'Esta caixa já é uma das pontas deste cabo.');
+        }
+
+        $vertices = json_decode((string) $vao['vertices'], true);
+        if (!is_array($vertices) || count($vertices) < 2) {
+            return Resultado::erro('FTTH-GEO-001', ['vao' => $vaoId], 'O cabo não tem traçado válido.');
+        }
+
+        $proj = Geo::projetarNaRota($vertices, (float) $caixa['lat'], (float) $caixa['lng']);
+        if ($proj === null) {
+            return Resultado::erro('FTTH-GEO-001', ['vao' => $vaoId], 'Não consegui projetar a caixa no cabo.');
+        }
+        if ($proj['distancia_m'] > self::raioQuebra()) {
+            return Resultado::erro('FTTH-SYS-002',
+                ['distancia_m' => $proj['distancia_m'], 'raio_m' => self::raioQuebra()],
+                'A caixa está a ' . number_format($proj['distancia_m'], 1, ',', '.') .
+                ' m do cabo — mais que o limite para emendar.');
+        }
+        if (count($proj['antes']) < 2 || count($proj['depois']) < 2) {
+            return Resultado::erro('FTTH-GEO-001', ['vao' => $vaoId],
+                'A caixa caiu exatamente sobre uma das pontas; mova-a um pouco para o meio do cabo.');
+        }
+
+        return Db::transacao(function () use ($vao, $vaoId, $caixa, $caixaId, $proj, $usuario) {
+            $caixaFim = (int) $vao['caixa_fim_id'];
+            $folga    = (float) ($vao['fator_folga'] ?: Config::num('fator_folga_cabo', 1.03));
+
+            // 1. a caixa encosta no cabo
+            $moveu = 0.0;
+            if ($proj['distancia_m'] > 0.01) {
+                $moveu = $proj['distancia_m'];
+                // Caixa::mover cuida de versão, auditoria e das pontas dos outros cabos que
+                // já encostam nesta caixa — elas acompanham o novo ponto.
+                Caixa::mover($caixaId, (float) $proj['lat'], (float) $proj['lng'], null, $usuario);
+            }
+
+            $geoA = Geo::comprimento($proj['antes']);
+            $geoB = Geo::comprimento($proj['depois']);
+            $total = $geoA + $geoB;
+
+            // Reserva técnica dividida na proporção de cada trecho: o rolo de sobra estava
+            // distribuído no vão inteiro, não numa ponta só.
+            $reserva  = (float) $vao['reserva_m'];
+            $reservaA = $total > 0 ? round($reserva * ($geoA / $total), 2) : $reserva;
+            $reservaB = round($reserva - $reservaA, 2);
+
+            // 2. o vão original vira o trecho A -> C, mantendo o id
+            Db::exec(
+                'UPDATE tab_ftth_cabo_vao
+                    SET caixa_fim_id = ?, vertices = ?, comprimento_geo = ?, reserva_m = ?,
+                        comprimento_optico = ?, versao = versao + 1, alterado_por = ?, alterado_em = NOW()
+                  WHERE id = ?',
+                [$caixaId, json_encode($proj['antes']), round($geoA, 2), $reservaA,
+                 Geo::comprimentoOptico($geoA, $folga, $reservaA), $usuario, $vaoId]
+            );
+
+            // 3. nasce o trecho C -> B, logo depois do original na ordem do cabo
+            Db::exec(
+                'UPDATE tab_ftth_cabo_vao SET ordem = ordem + 1
+                  WHERE cabo_id = ? AND ordem > ? AND excluido_em IS NULL',
+                [(int) $vao['cabo_id'], (int) $vao['ordem']]
+            );
+            Db::exec(
+                'INSERT INTO tab_ftth_cabo_vao
+                    (cabo_id, regiao_id, ordem, caixa_ini_id, caixa_fim_id, vertices,
+                     comprimento_geo, fator_folga, reserva_m, comprimento_optico,
+                     origem, importacao_id, criado_por, criado_em)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())',
+                [(int) $vao['cabo_id'], (int) $vao['regiao_id'], (int) $vao['ordem'] + 1,
+                 $caixaId, $caixaFim, json_encode($proj['depois']),
+                 round($geoB, 2), $folga, $reservaB, Geo::comprimentoOptico($geoB, $folga, $reservaB),
+                 $vao['origem'], $vao['importacao_id'], $usuario]
+            );
+            $novoId = Db::ultimoId();
+
+            // 4. o que já estava fundido na caixa do fim agora pertence ao trecho novo
+            $migradas = Db::exec(
+                'UPDATE tab_ftth_ligacao_ponta SET elemento_id = ?
+                  WHERE caixa_id = ? AND elemento = "VAO_FIBRA" AND elemento_id = ?',
+                [$novoId, $caixaFim, $vaoId]
+            );
+
+            // 5. as fibras atravessam a caixa nova
+            $passagens = Topologia::ligarCabos($caixaId, $vaoId, $novoId, true, $usuario);
+            $ligadas = (int) ($passagens->data['ligadas'] ?? 0);
+
+            // 6. e o diagrama já abre legível: o cabo que vem do POP à esquerda, o que segue
+            // para a rua à direita e espelhado, com as fibras de frente umas para as outras.
+            Topologia::organizarEmenda($caixaId, $vaoId, $novoId, $usuario);
+
+            Auditoria::registrar('vao', $vaoId, 'quebrar',
+                ['caixa_fim_id' => $caixaFim, 'comprimento_geo' => (float) $vao['comprimento_geo']],
+                ['caixa' => $caixaId, 'trecho_novo' => $novoId,
+                 'metros_a' => round($geoA, 2), 'metros_b' => round($geoB, 2),
+                 'fibras_passando' => $ligadas, 'pontas_migradas' => $migradas],
+                (int) $vao['regiao_id']);
+
+            return Resultado::ok([
+                'vao'            => $vaoId,
+                'vao_novo'       => $novoId,
+                'caixa'          => $caixaId,
+                'cabo'           => (int) $vao['cabo_id'],
+                'metros_a'       => round($geoA, 2),
+                'metros_b'       => round($geoB, 2),
+                'caixa_moveu_m'  => round($moveu, 2),
+                'fibras_passando' => $ligadas,
+                'pontas_migradas' => $migradas,
+            ]);
+        });
+    }
+
+    /**
+     * Esta caixa é só uma emenda no meio de um cabo? Se for, descreve o que a união faria.
+     *
+     * É o inverso da quebra: a caixa entrou em cima de um cabo e agora sai — o cabo volta a
+     * ser um lance só. Para isso valer, a caixa não pode ter função nenhuma além de deixar as
+     * fibras passarem:
+     *
+     *   - exatamente dois trechos ativos, e do MESMO cabo;
+     *   - nenhum splitter (se tem splitter, a caixa distribui, não só passa);
+     *   - toda ligação daqui é fibra N de um trecho com a fibra N do outro. Uma fusão cruzada
+     *     (fibra 1 com a 5) é informação que o cabo unido não teria como guardar, e some se
+     *     alguém juntar por cima — então nesse caso a união não é oferecida.
+     *
+     * @return array{vao_a:int,vao_b:int,cabo:int,cabo_nome:?string,metros:float,ligacoes:int,
+     *               caixa_ini:int,caixa_fim:int,nome_ini:string,nome_fim:string}|null
+     */
+    public static function emendaSimples(int $caixaId): ?array
+    {
+        $vaos = Db::todos(
+            'SELECT v.id, v.cabo_id, v.ordem, v.caixa_ini_id, v.caixa_fim_id, v.comprimento_geo,
+                    v.reserva_m, c.nome AS cabo_nome
+               FROM tab_ftth_cabo_vao v
+               JOIN tab_ftth_cabo c ON c.id = v.cabo_id
+              WHERE (v.caixa_ini_id = ? OR v.caixa_fim_id = ?) AND v.excluido_em IS NULL
+              ORDER BY v.ordem', [$caixaId, $caixaId]);
+
+        if (count($vaos) !== 2 || (int) $vaos[0]['cabo_id'] !== (int) $vaos[1]['cabo_id']) {
+            return null;
+        }
+
+        $temSplitter = (int) Db::valor(
+            'SELECT COUNT(*) FROM tab_ftth_splitter WHERE caixa_id = ? AND excluido_em IS NULL', [$caixaId]);
+        $temDio = (int) Db::valor(
+            'SELECT COUNT(*) FROM tab_ftth_dio WHERE caixa_id = ? AND excluido_em IS NULL', [$caixaId]);
+        if ($temSplitter > 0 || $temDio > 0) {
+            return null;
+        }
+
+        $a = (int) $vaos[0]['id'];
+        $b = (int) $vaos[1]['id'];
+
+        // Toda ligação da caixa tem de ser "fibra N de um trecho com a fibra N do outro".
+        $ligacoes = Db::todos(
+            'SELECT l.id,
+                    MAX(CASE WHEN p.lado = "A" THEN p.elemento END) AS elem_a,
+                    MAX(CASE WHEN p.lado = "A" THEN p.elemento_id END) AS id_a,
+                    MAX(CASE WHEN p.lado = "A" THEN p.numero END) AS num_a,
+                    MAX(CASE WHEN p.lado = "B" THEN p.elemento END) AS elem_b,
+                    MAX(CASE WHEN p.lado = "B" THEN p.elemento_id END) AS id_b,
+                    MAX(CASE WHEN p.lado = "B" THEN p.numero END) AS num_b
+               FROM tab_ftth_ligacao l
+               JOIN tab_ftth_ligacao_ponta p ON p.ligacao_id = l.id
+              WHERE l.caixa_id = ?
+              GROUP BY l.id', [$caixaId]);
+
+        foreach ($ligacoes as $l) {
+            if ($l['elem_a'] !== 'VAO_FIBRA' || $l['elem_b'] !== 'VAO_FIBRA') {
+                return null;
+            }
+            $ids = [(int) $l['id_a'], (int) $l['id_b']];
+            sort($ids);
+            if ($ids !== [min($a, $b), max($a, $b)]) {
+                return null;
+            }
+            if ((int) $l['num_a'] !== (int) $l['num_b']) {
+                return null;   // fusão cruzada: a união apagaria a informação
+            }
+        }
+
+        $pontas = self::pontasDaUniao($caixaId, $vaos[0], $vaos[1]);
+        $nomes  = Db::um('SELECT
+                            (SELECT nome FROM tab_ftth_caixa WHERE id = ?) AS ini,
+                            (SELECT nome FROM tab_ftth_caixa WHERE id = ?) AS fim',
+                         [$pontas['ini'], $pontas['fim']]);
+
+        return [
+            'vao_a'     => $a,
+            'vao_b'     => $b,
+            'cabo'      => (int) $vaos[0]['cabo_id'],
+            'cabo_nome' => $vaos[0]['cabo_nome'],
+            'metros'    => round((float) $vaos[0]['comprimento_geo'] + (float) $vaos[1]['comprimento_geo'], 2),
+            'ligacoes'  => count($ligacoes),
+            'caixa_ini' => $pontas['ini'],
+            'caixa_fim' => $pontas['fim'],
+            'nome_ini'  => (string) ($nomes['ini'] ?? ''),
+            'nome_fim'  => (string) ($nomes['fim'] ?? ''),
+        ];
+    }
+
+    /** As duas pontas que sobram quando a caixa do meio sai. */
+    private static function pontasDaUniao(int $caixaId, array $v1, array $v2): array
+    {
+        $outra = static function (array $v) use ($caixaId): int {
+            return (int) $v['caixa_ini_id'] === $caixaId ? (int) $v['caixa_fim_id'] : (int) $v['caixa_ini_id'];
+        };
+        return ['ini' => $outra($v1), 'fim' => $outra($v2)];
+    }
+
+    /**
+     * Junta os dois trechos num só e apaga a caixa do meio.
+     *
+     * O trecho de menor ordem sobrevive com o id: é ele que as fibras da ponta de origem já
+     * referenciam. O outro é encerrado, e o que estava fundido na ponta dele migra — o mesmo
+     * cuidado da quebra, no sentido contrário.
+     *
+     * A exclusão da caixa continua passando por Caixa::excluir, que é quem sabe recusar. Aqui
+     * só tiramos o que prendia a caixa; se sobrar qualquer coisa, ele recusa e a transação
+     * inteira volta atrás.
+     */
+    public static function unirVaos(int $caixaId, ?int $versaoCaixa, string $usuario): Resultado
+    {
+        $emenda = self::emendaSimples($caixaId);
+        if ($emenda === null) {
+            return Resultado::erro('FTTH-TOP-016', ['caixa' => $caixaId],
+                'Esta caixa não é uma emenda simples entre dois trechos do mesmo cabo.');
+        }
+
+        $v1 = Db::um('SELECT * FROM tab_ftth_cabo_vao WHERE id = ?', [$emenda['vao_a']]);
+        $v2 = Db::um('SELECT * FROM tab_ftth_cabo_vao WHERE id = ?', [$emenda['vao_b']]);
+        if (!$v1 || !$v2) {
+            return Resultado::erro('FTTH-TOP-002', ['caixa' => $caixaId]);
+        }
+
+        // A geometria é lida no sentido A -> caixa -> B, invertendo o que estiver ao contrário.
+        $g1 = json_decode((string) $v1['vertices'], true);
+        $g2 = json_decode((string) $v2['vertices'], true);
+        if (!is_array($g1) || !is_array($g2) || count($g1) < 2 || count($g2) < 2) {
+            return Resultado::erro('FTTH-GEO-001', ['caixa' => $caixaId], 'Traçado inválido nos trechos.');
+        }
+        if ((int) $v1['caixa_ini_id'] === $caixaId) { $g1 = array_reverse($g1); }
+        if ((int) $v2['caixa_fim_id'] === $caixaId) { $g2 = array_reverse($g2); }
+
+        $vertices = array_merge($g1, array_slice($g2, 1));   // o ponto da caixa entra uma vez só
+        if (!Geo::rotaValida($vertices)) {
+            return Resultado::erro('FTTH-GEO-001', ['caixa' => $caixaId], 'Traçado inválido na união.');
+        }
+
+        return Db::transacao(function () use ($caixaId, $versaoCaixa, $usuario, $emenda,
+                                              $v1, $v2, $vertices) {
+            $fimNovo = $emenda['caixa_fim'];
+            $iniNovo = $emenda['caixa_ini'];
+            $folga   = (float) ($v1['fator_folga'] ?: Config::num('fator_folga_cabo', 1.03));
+            $reserva = (float) $v1['reserva_m'] + (float) $v2['reserva_m'];
+            $metros  = Geo::comprimento($vertices);
+
+            // As passagens desta caixa deixam de existir junto com ela (as pontas caem por CASCADE).
+            Db::exec('DELETE FROM tab_ftth_ligacao WHERE caixa_id = ?', [$caixaId]);
+            Db::exec('DELETE FROM tab_ftth_diagrama_no WHERE caixa_id = ?', [$caixaId]);
+
+            // O que estava fundido na ponta do segundo trecho passa a ser do primeiro.
+            $migradas = Db::exec(
+                'UPDATE tab_ftth_ligacao_ponta SET elemento_id = ?
+                  WHERE caixa_id = ? AND elemento = "VAO_FIBRA" AND elemento_id = ?',
+                [(int) $v1['id'], $fimNovo, (int) $v2['id']]
+            );
+
+            Db::exec(
+                'UPDATE tab_ftth_cabo_vao
+                    SET caixa_ini_id = ?, caixa_fim_id = ?, vertices = ?, comprimento_geo = ?,
+                        reserva_m = ?, comprimento_optico = ?, versao = versao + 1,
+                        alterado_por = ?, alterado_em = NOW()
+                  WHERE id = ?',
+                [$iniNovo, $fimNovo, json_encode($vertices), round($metros, 2), $reserva,
+                 Geo::comprimentoOptico($metros, $folga, $reserva), $usuario, (int) $v1['id']]
+            );
+
+            Db::exec('UPDATE tab_ftth_cabo_vao SET excluido_em = NOW(), alterado_por = ?
+                       WHERE id = ?', [$usuario, (int) $v2['id']]);
+            Db::exec('UPDATE tab_ftth_cabo_vao SET ordem = ordem - 1
+                       WHERE cabo_id = ? AND ordem > ? AND excluido_em IS NULL',
+                     [(int) $v2['cabo_id'], (int) $v2['ordem']]);
+
+            // Agora nada mais prende a caixa: quem valida e apaga é o serviço de sempre.
+            $exc = Caixa::excluir($caixaId, $versaoCaixa, $usuario);
+            if (!$exc->ok) {
+                throw new RuntimeException('nao foi possivel excluir a caixa depois de unir os trechos');
+            }
+
+            Auditoria::registrar('vao', (int) $v1['id'], 'unir',
+                ['trecho_removido' => (int) $v2['id'], 'caixa_removida' => $caixaId],
+                ['metros' => round($metros, 2), 'pontas_migradas' => $migradas,
+                 'ligacoes_desfeitas' => $emenda['ligacoes']],
+                (int) $v1['regiao_id']);
+
+            return Resultado::ok([
+                'caixa'              => $caixaId,
+                'vao'                => (int) $v1['id'],
+                'vao_removido'       => (int) $v2['id'],
+                'metros'             => round($metros, 2),
+                'ligacoes_desfeitas' => $emenda['ligacoes'],
+                'pontas_migradas'    => $migradas,
+                'nome_ini'           => $emenda['nome_ini'],
+                'nome_fim'           => $emenda['nome_fim'],
+            ]);
         });
     }
 }

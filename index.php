@@ -94,6 +94,11 @@ function ftth_salvar_ajustes(): array
         Config::set('mapa_rotulo_zoom', (string) $zoom, $usuario_logado);
         $salvas[] = 'mapa_rotulo_zoom';
     }
+    if (isset($_POST['raio_quebra_cabo_m'])) {
+        $raio = max(1, min(100, (int) $_POST['raio_quebra_cabo_m']));
+        Config::set('raio_quebra_cabo_m', (string) $raio, $usuario_logado);
+        $salvas[] = 'raio_quebra_cabo_m';
+    }
 
     return ['salvas' => $salvas];
 }
@@ -132,7 +137,6 @@ include('nav/header.php');
         <a class="ftth-btn ftth-btn--pri" href="mapa.php"><i class="bi-arrow-left"></i> Voltar</a>
         <span class="ftth-acoes-sep"></span>
         <a class="ftth-btn ftth-btn--sec" href="regioes.php"><i class="bi-geo-fill"></i> Regiões</a>
-        <a class="ftth-btn ftth-btn--sec" href="pop.php"><i class="bi-hdd-rack-fill"></i> POP / Data Center</a>
         <a class="ftth-btn ftth-btn--sec" href="importar.php"><i class="bi-box-seam"></i> Importar KMZ</a>
     </div>
 
@@ -150,8 +154,8 @@ include('nav/header.php');
     <?php endif; ?>
 
     <?php if (!empty($resumo['instalado'])): ?>
-    <div class="row g-3">
-        <div class="col-12 col-md-6">
+    <div class="ftth-duplo">
+        <div>
             <div class="ftth-card">
                 <div class="ftth-card-topo">
                     <h2><i class="bi-diagram-3-fill"></i> Planta documentada</h2>
@@ -191,7 +195,7 @@ include('nav/header.php');
                 </div>
             </div>
         </div>
-        <div class="col-12 col-md-6">
+        <div>
             <div class="ftth-card">
                 <div class="ftth-card-topo">
                     <h2><i class="bi-people-fill"></i> Cadastro do MK-AUTH</h2>
@@ -237,8 +241,8 @@ include('nav/header.php');
     <?php endif; ?>
 
     <!-- Ajustes: sem esta tela, a chave do Google Maps só entraria por SQL no banco. -->
-    <div class="row g-3">
-        <div class="col-12 col-md-7">
+    <div class="ftth-duplo ftth-duplo--3por2">
+        <div>
             <div class="ftth-card">
                 <div class="ftth-card-topo">
                     <h2><i class="bi-gear-fill"></i> Ajustes</h2>
@@ -265,6 +269,12 @@ include('nav/header.php');
                         <input id="f-zoom" class="ftth-campo" type="number" min="3" max="21"
                                value="<?= (int) Config::num('mapa_rotulo_zoom', 17) ?>">
                     </div>
+                    <div class="ftth-form-campo ftth-form-campo--sm"
+                         title="Distância em que o mapa oferece emendar a caixa no cabo">
+                        <label for="f-raio">Raio de emenda (m)</label>
+                        <input id="f-raio" class="ftth-campo" type="number" min="1" max="100"
+                               value="<?= (int) Config::num('raio_quebra_cabo_m', 10) ?>">
+                    </div>
                     <div class="ftth-form-acoes">
                         <button class="ftth-btn ftth-btn--pri" id="btn-ajustes">Salvar</button>
                     </div>
@@ -277,7 +287,7 @@ include('nav/header.php');
             </div>
         </div>
 
-        <div class="col-12 col-md-5">
+        <div>
             <div class="ftth-card">
                 <div class="ftth-card-topo">
                     <h2><i class="bi-hdd-network-fill"></i> Estado do banco</h2>
@@ -335,7 +345,8 @@ include('nav/header.php');
                 csrf: CSRF,
                 google_maps_key: $('#f-maps').val(),
                 mapa_tipo: $('#f-tipo').val(),
-                mapa_rotulo_zoom: $('#f-zoom').val()
+                mapa_rotulo_zoom: $('#f-zoom').val(),
+                raio_quebra_cabo_m: $('#f-raio').val()
             },
             onOk: function () {
                 $('#saida-ajustes').html('<div class="ftth-aviso ftth-aviso--ok">Ajustes salvos. '

@@ -49,14 +49,30 @@ final class Mapa
             $parCaixa
         );
 
-        // Vãos: filtra pela caixa de origem dentro da área (aproximação boa o bastante e barata).
+        // Vãos: entra todo trecho cuja MOLDURA cruza a área visível — não só os que têm uma
+        // ponta dentro dela. Filtrar pela ponta fazia o cabo sumir quando se dava zoom no meio
+        // de um lance longo: as duas caixas ficavam fora da tela e o trecho inteiro saía do
+        // resultado, com o contador acusando "0 vãos" sobre um cabo que estava ali.
+        //
+        // A moldura é a das duas pontas, com uma folga de 25% da área pedida para acomodar a
+        // curva do traçado. Não é a moldura exata do desenho (os vértices são JSON, e lê-los
+        // custaria a região inteira a cada arrasto do mapa), mas cobre o cabo que acompanha a
+        // rua, que é o caso real.
         $filtroVao = 'v.regiao_id = ? AND v.excluido_em IS NULL';
         $parVao    = [$regiaoId];
         if ($bbox) {
-            $filtroVao .= ' AND EXISTS (SELECT 1 FROM tab_ftth_caixa cc
-                                         WHERE cc.id IN (v.caixa_ini_id, v.caixa_fim_id)
-                                           AND cc.lat BETWEEN ? AND ? AND cc.lng BETWEEN ? AND ?)';
-            array_push($parVao, $bbox[0], $bbox[2], $bbox[1], $bbox[3]);
+            $folgaLat = (($bbox[2] - $bbox[0]) ?: 0.001) * 0.25;
+            $folgaLng = (($bbox[3] - $bbox[1]) ?: 0.001) * 0.25;
+            $areaLatMin = $bbox[0] - $folgaLat;
+            $areaLatMax = $bbox[2] + $folgaLat;
+            $areaLngMin = $bbox[1] - $folgaLng;
+            $areaLngMax = $bbox[3] + $folgaLng;
+
+            $filtroVao .= ' AND LEAST(ci.lat, cf.lat)    <= ?
+                            AND GREATEST(ci.lat, cf.lat) >= ?
+                            AND LEAST(ci.lng, cf.lng)    <= ?
+                            AND GREATEST(ci.lng, cf.lng) >= ?';
+            array_push($parVao, $areaLatMax, $areaLatMin, $areaLngMax, $areaLngMin);
         }
 
         $vaos = Db::todos(
@@ -96,12 +112,10 @@ final class Mapa
                 if (!$g) {
                     continue;
                 }
-                if ($bbox) {
-                    $lat = (float) $g[0][0];
-                    $lng = (float) $g[0][1];
-                    if ($lat < $bbox[0] || $lat > $bbox[2] || $lng < $bbox[1] || $lng > $bbox[3]) {
-                        continue;
-                    }
+                // Mesma regra dos vãos: vale a moldura do item, não o primeiro ponto dele.
+                // Aqui a geometria já está lida, então a moldura é a de verdade.
+                if ($bbox && !self::molduraCruza($g, $bbox)) {
+                    continue;
                 }
                 $quarentena[] = [
                     'id'      => (int) $i['id'],
@@ -122,6 +136,30 @@ final class Mapa
             'limite'     => $limite,
             'truncado'   => count($caixas) >= $limite || count($vaos) >= $limite,
         ];
+    }
+
+    /**
+     * A moldura desta geometria cruza a área visível?
+     *
+     * Um traçado pode atravessar a tela inteira sem ter nenhum vértice dentro dela — é o caso
+     * de dar zoom no meio de um lance longo. Comparar retângulos resolve isso sem precisar
+     * testar segmento por segmento.
+     *
+     * @param array $geo  [[lat,lng], ...]
+     * @param array $bbox [latMin, lngMin, latMax, lngMax]
+     */
+    private static function molduraCruza(array $geo, array $bbox): bool
+    {
+        $latMin = $latMax = (float) $geo[0][0];
+        $lngMin = $lngMax = (float) $geo[0][1];
+        foreach ($geo as $p) {
+            $latMin = min($latMin, (float) $p[0]);
+            $latMax = max($latMax, (float) $p[0]);
+            $lngMin = min($lngMin, (float) $p[1]);
+            $lngMax = max($lngMax, (float) $p[1]);
+        }
+        return $latMin <= $bbox[2] && $latMax >= $bbox[0]
+            && $lngMin <= $bbox[3] && $lngMax >= $bbox[1];
     }
 
     /** Busca universal simplificada da fase 1: caixa, cabo e cliente já vinculado. */
