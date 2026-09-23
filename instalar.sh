@@ -488,8 +488,17 @@ publicar() {
 }
 
 instalar_classe() {
-    # addons.class.php e do MK-AUTH, nao do addon: copiamos o do proprio servidor em vez de
+    # addons.class.php e do MK-AUTH, nao do addon: usamos o do proprio servidor em vez de
     # redistribuir um binario de terceiro.
+    #
+    # O painel gerencia esse arquivo sozinho: em algumas versoes ele troca a copia por um
+    # symlink para o include do core. Quando ja e o mesmo arquivo, copiar por cima falharia
+    # com "sao o mesmo arquivo" — entao deixamos como esta, que e o estado que o MK-AUTH quer.
+    if [ -e "$DEST/addons.class.php" ] && [ "$DEST/addons.class.php" -ef "$CLASSE_ORIGEM" ]; then
+        ok "addons.class.php ja aponta para o arquivo do proprio MK-AUTH"
+        return 0
+    fi
+
     if [ -f "$CLASSE_ORIGEM" ]; then
         cp -f "$CLASSE_ORIGEM" "$DEST/addons.class.php"
         ok "addons.class.php copiado do proprio MK-AUTH ($(stat -c%s "$DEST/addons.class.php") bytes)"
