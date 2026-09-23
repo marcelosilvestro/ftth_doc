@@ -1,0 +1,44 @@
+# Publica o pacote do addon quando uma tag v* e empurrada.
+#
+#   git tag -a v0.9.1 -m "..." && git push origin v0.9.1
+#
+# O empacotar.sh e quem decide o que entra; aqui so rodamos ele e anexamos o resultado.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir a sintaxe do que vai para os servidores
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y php-cli shellcheck >/dev/null
+          find . -name '*.php' -not -path './tests/*' -print0 | xargs -0 -n1 php -l
+          bash -n instalar.sh
+          shellcheck -S warning instalar.sh empacotar.sh
+
+      - name: Conferir que a tag bate com o manifest
+        run: |
+          MANIFEST=$(php -r '$m=json_decode(file_get_contents("manifest.json"),true); echo $m["version"];')
+          TAG="${GITHUB_REF_NAME#v}"
+          [ "$MANIFEST" = "$TAG" ] || { echo "manifest.json diz $MANIFEST e a tag diz $TAG"; exit 1; }
+
+      - name: Empacotar
+        run: ./empacotar.sh
+
+      - name: Publicar a release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pacote/*.tar.gz
+            pacote/SHA256SUMS
+          generate_release_notes: true

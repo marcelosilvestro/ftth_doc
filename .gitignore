@@ -1,0 +1,7 @@
+uploads/
+logs/
+pacote/
+*.bak
+*.old
+tests/dados/
+addons.class.php

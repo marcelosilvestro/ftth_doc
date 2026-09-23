@@ -1,0 +1,7 @@
+# O addon roda em Linux: todo arquivo de texto vai e volta com LF.
+# Sem isto, um clone feito no Windows entrega instalar.sh com CRLF, e o servidor responde
+# "bad interpreter: /usr/bin/env bash^M".
+* text=auto eol=lf
+*.kmz binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,495 @@
+/* ftth_doc :: estilo proprio do addon.
+   Paleta e densidade seguem o padrao do Livro Caixa (regra de fidelidade visual),
+   mas o arquivo e independente: o addon nao depende de nenhum outro. */
+
+:root {
+    --ftth-azul:      #1B3A6B;
+    --ftth-azul-claro:#2E5FA3;
+    --ftth-verde:     #1F9D55;
+    --ftth-amarelo:   #E8A317;
+    --ftth-vermelho:  #C0392B;
+    --ftth-cinza:     #6B7280;
+    --ftth-borda:     #DCE3EC;
+    --ftth-fundo:     #F5F7FA;
+    --ftth-texto:     #22303F;
+}
+
+/* Contexto de empilhamento proprio no nivel 0: nenhum card do addon sobe por cima da barra
+   do MK-AUTH. (O menu vazio, porem, era outra coisa: faltava incluir menu.js do core.) */
+.ftth-wrap        { position: relative; z-index: 0; padding: 14px 16px 24px; color: var(--ftth-texto); }
+.ftth-titulo      { font-size: 18px; font-weight: 600; margin: 0 0 4px; color: var(--ftth-azul); }
+.ftth-sub         { font-size: 12px; color: var(--ftth-cinza); margin: 0 0 14px; }
+
+.ftth-card        { background: #fff; border: 1px solid var(--ftth-borda); border-radius: 6px;
+                    padding: 14px 16px; margin-bottom: 14px; }
+.ftth-card h2     { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--ftth-azul); }
+
+.ftth-tabela      { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ftth-tabela th   { text-align: left; font-weight: 600; color: var(--ftth-cinza);
+                    border-bottom: 1px solid var(--ftth-borda); padding: 7px 8px; white-space: nowrap; }
+.ftth-tabela td   { border-bottom: 1px solid #EEF2F7; padding: 7px 8px; }
+.ftth-tabela tr:last-child td { border-bottom: 0; }
+.ftth-tabela .mono{ font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+
+/* U3 :: os cinco estados visuais, iguais em todo o sistema */
+.ftth-selo        { display: inline-block; font-size: 11px; font-weight: 600; line-height: 1;
+                    padding: 4px 8px; border-radius: 10px; }
+.ftth-selo--ok    { background: #E4F5EC; color: #1F7A45; }
+.ftth-selo--pend  { background: #FDF3DD; color: #8A6212; }
+.ftth-selo--erro  { background: #FBE6E3; color: #96271B; }
+.ftth-selo--info  { background: #E8EFF9; color: #2E5FA3; }
+.ftth-selo--novo  { background: #EEF0F3; color: #55606E; }
+
+.ftth-btn         { display: inline-block; border: 0; border-radius: 4px; cursor: pointer;
+                    font-size: 13px; font-weight: 600; padding: 8px 16px; }
+.ftth-btn--pri    { background: var(--ftth-azul); color: #fff; }
+.ftth-btn--pri:hover  { background: var(--ftth-azul-claro); }
+.ftth-btn--sec    { background: #fff; color: var(--ftth-azul); border: 1px solid var(--ftth-borda); }
+.ftth-btn[disabled]{ opacity: .5; cursor: not-allowed; }
+
+.ftth-aviso       { border-left: 3px solid var(--ftth-amarelo); background: #FFFBF0;
+                    padding: 10px 12px; font-size: 12.5px; margin-bottom: 12px; }
+.ftth-aviso--erro { border-left-color: var(--ftth-vermelho); background: #FEF6F5; }
+.ftth-aviso--ok   { border-left-color: var(--ftth-verde);    background: #F3FBF6; }
+
+/* ---------------------------------------------------------------- telas de configuracao
+   Barra de acoes, cabecalho de card, indicadores em grade (index.php) e formulario em
+   linha unica (regioes.php). Densidade antes de tudo: o numero e o assunto, nao a moldura. */
+.ftth-acoes-topo  { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; }
+.ftth-acoes-topo .ftth-btn { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+.ftth-acoes-sep   { width: 1px; align-self: stretch; background: var(--ftth-borda); margin: 0 2px; }
+.ftth-btn--sec:hover { border-color: var(--ftth-azul-claro); background: var(--ftth-fundo); }
+
+.ftth-card-topo   { display: flex; align-items: center; justify-content: space-between;
+                    gap: 10px; margin: 0 0 10px; }
+.ftth-card-topo h2   { margin: 0; display: flex; align-items: center; gap: 6px; }
+.ftth-card-topo h2 i { color: var(--ftth-azul-claro); font-size: 13px; }
+.ftth-card-link   { font-size: 11.5px; font-weight: 600; color: var(--ftth-azul-claro);
+                    text-decoration: none; white-space: nowrap; }
+.ftth-card-link:hover { text-decoration: underline; }
+.ftth-card-nota   { margin: 10px 0 0; }
+
+/* Indicadores: rotulo pequeno em cima, numero grande embaixo. O valor usa margin-top auto
+   para que numeros da mesma linha fiquem alinhados mesmo quando um rotulo ocupa duas linhas. */
+.ftth-kpis        { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ftth-kpi         { display: flex; flex-direction: column; min-width: 0;
+                    border: 1px solid var(--ftth-borda); border-radius: 6px;
+                    background: var(--ftth-fundo); padding: 8px 10px; text-decoration: none; }
+.ftth-kpi-rotulo  { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                    letter-spacing: .04em; color: var(--ftth-cinza); line-height: 1.3; }
+.ftth-kpi-valor   { font-size: 18px; font-weight: 700; color: var(--ftth-azul);
+                    line-height: 1.15; margin-top: auto; padding-top: 6px; }
+.ftth-kpi-valor small { font-size: 11px; font-weight: 600; color: var(--ftth-cinza); margin-left: 3px; }
+a.ftth-kpi:hover  { border-color: var(--ftth-azul-claro); background: #fff; }
+.ftth-kpi--alerta { border-color: rgba(232, 163, 23, .5); background: #FFFBF0; }
+.ftth-kpi--alerta .ftth-kpi-valor { color: var(--ftth-amarelo); }
+
+/* Formulario numa linha so: rotulo miudo em cima do campo, botoes no fim da mesma linha. */
+.ftth-form-linha  { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.ftth-form-campo  { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 150px; }
+.ftth-form-campo--md { flex: 0 1 130px; }
+.ftth-form-campo--sm { flex: 0 0 80px; }
+.ftth-form-campo label { font-size: 10px; font-weight: 600; text-transform: uppercase;
+                    letter-spacing: .04em; color: var(--ftth-cinza); }
+.ftth-form-campo .ftth-campo { width: 100%; }
+.ftth-form-acoes  { display: flex; gap: 8px; margin-left: auto; }
+
+@media (max-width: 1100px) { .ftth-kpis { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .ftth-kpis { grid-template-columns: repeat(2, 1fr); }
+                             .ftth-form-acoes { margin-left: 0; } }
+
+/* ---------------------------------------------------------------- mapa */
+.ftth-wrap--mapa  { padding: 10px 12px 12px; }
+.ftth-campo       { padding: 7px 9px; border: 1px solid var(--ftth-borda); border-radius: 4px;
+                    font-size: 13px; background: #fff; color: var(--ftth-texto); }
+
+/* Barra única do mapa: tudo numa linha, porque cada linha aqui é altura que o mapa perde.
+   Só quebra em tela estreita, onde empilhar é melhor do que espremer. */
+.ftth-mapa-barra  { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+                    margin-bottom: 8px; }
+.ftth-mapa-barra .ftth-modos { margin-bottom: 0; }
+.ftth-mapa-barra .ftth-modo  { padding: 7px 12px; }
+/* Empurra Configurações para a direita e o mantém colado na borda. */
+.ftth-mapa-config { margin-left: auto; flex: none; }
+
+/* Camadas num menu: cinco caixinhas soltas ocupavam meia barra. */
+.ftth-camadas       { position: relative; flex: none; }
+.ftth-camadas-botao { display: flex; align-items: center; gap: 6px;
+                      border: 1px solid var(--ftth-borda); background: #fff;
+                      color: var(--ftth-texto); border-radius: 4px; padding: 7px 10px;
+                      font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ftth-camadas-botao:hover { border-color: var(--ftth-azul-claro); color: var(--ftth-azul); }
+.ftth-camadas.aberto .ftth-camadas-botao { border-color: var(--ftth-azul-claro);
+                                           color: var(--ftth-azul); }
+.ftth-camadas-conta { background: var(--ftth-azul); color: #fff; border-radius: 9px;
+                      font-size: 11px; padding: 1px 6px; min-width: 18px; text-align: center; }
+.ftth-camadas-seta  { font-size: 10px; opacity: .7; transition: transform .15s; }
+.ftth-camadas.aberto .ftth-camadas-seta { transform: rotate(180deg); }
+.ftth-camadas-lista { display: none; position: absolute; z-index: 6; top: calc(100% + 4px);
+                      left: 0; min-width: 170px; background: #fff; padding: 6px;
+                      border: 1px solid var(--ftth-borda); border-radius: 5px;
+                      box-shadow: 0 8px 22px rgba(20, 35, 60, .14); }
+.ftth-camadas.aberto .ftth-camadas-lista { display: block; }
+.ftth-camadas-lista .ftth-chk { display: block; padding: 5px 7px; border-radius: 4px;
+                                cursor: pointer; font-size: 13px; color: var(--ftth-texto); }
+.ftth-camadas-lista .ftth-chk:hover { background: var(--ftth-fundo); }
+
+/* Resumo da planta: compacto, para caber na mesma linha sem competir com os botões. */
+.ftth-resumo        { display: flex; align-items: center; gap: 10px; flex: none;
+                      border: 1px solid var(--ftth-borda); border-radius: 5px;
+                      background: var(--ftth-fundo); padding: 5px 10px;
+                      font-size: 12px; color: var(--ftth-cinza); white-space: nowrap; }
+.ftth-resumo:empty  { display: none; }
+.ftth-resumo b      { color: var(--ftth-azul); font-size: 13px; font-weight: 600;
+                      margin-right: 3px; }
+.ftth-resumo-item   { display: inline-flex; align-items: baseline; }
+.ftth-resumo-item + .ftth-resumo-item { border-left: 1px solid var(--ftth-borda);
+                                        padding-left: 10px; }
+.ftth-resumo-item--pend b { color: var(--ftth-amarelo); }
+.ftth-resumo-item--aviso  { color: var(--ftth-amarelo); font-weight: 600; }
+
+/* Barra de modos (padrão UpperX): um modo ativo por vez. */
+.ftth-modos       { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.ftth-modo        { border: 1px solid var(--ftth-borda); background: #fff; color: var(--ftth-texto);
+                    border-radius: 4px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+                    cursor: pointer; }
+.ftth-modo i      { margin-right: 4px; opacity: .85; }
+.ftth-modal-topo i, .ftth-painel-titulo i { color: var(--ftth-azul-claro); margin-right: 4px; }
+.ftth-btn i       { margin-right: 4px; }
+.ftth-modo:hover:not([disabled]) { border-color: var(--ftth-azul-claro); color: var(--ftth-azul); }
+.ftth-modo.ativo  { background: var(--ftth-azul); border-color: var(--ftth-azul); color: #fff; }
+/* O hover tem especificidade maior que .ativo e pintava o texto de azul sobre o fundo
+   azul: o botão ativo ficava um retângulo cego. O ativo mantém o texto branco. */
+.ftth-modo.ativo:hover:not([disabled]) { background: var(--ftth-azul-claro);
+                                         border-color: var(--ftth-azul-claro); color: #fff; }
+.ftth-modo[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Modal */
+.ftth-modal       { position: fixed; inset: 0; z-index: 4000; background: rgba(16,26,40,.55);
+                    display: flex; align-items: center; justify-content: center; }
+/* A caixa e uma coluna flex: so o corpo rola, e o rodape nunca sai da tela --
+   era o que fazia o botao Salvar ficar no limite da viewport em modal alto. */
+.ftth-modal-caixa { background: #fff; border-radius: 8px; width: 380px; max-width: calc(100vw - 32px);
+                    max-height: calc(100vh - 80px); overflow: hidden;
+                    display: flex; flex-direction: column;
+                    box-shadow: 0 20px 50px rgba(10,20,35,.35); }
+.ftth-modal-topo  { position: relative; padding: 14px 16px 10px; border-bottom: 1px solid var(--ftth-borda);
+                    font-size: 15px; color: var(--ftth-azul); flex: none; }
+.ftth-modal-corpo { padding: 14px 16px; overflow: auto; min-height: 0; flex: 1 1 auto; }
+.ftth-modal-rodape{ display: flex; justify-content: flex-end; gap: 8px; flex: none;
+                    padding: 12px 16px; border-top: 1px solid var(--ftth-borda); }
+.ftth-rotulo-campo{ display: block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+                    letter-spacing: .04em; color: var(--ftth-cinza); margin: 12px 0 5px; }
+.ftth-rotulo-campo:first-child { margin-top: 0; }
+
+/* Dois campos por linha: encurta o modal sem apertar o campo. */
+.ftth-linha-campos       { display: flex; gap: 12px; margin-top: 12px; }
+.ftth-linha-campos:first-child { margin-top: 0; }
+.ftth-linha-campos > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Campo colado no fundo: se um rotulo quebrar em duas linhas, os dois seguem alinhados. */
+.ftth-linha-campos .ftth-campo { width: 100%; margin-top: auto; }
+
+.ftth-tipos       { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ftth-tipo        { border: 1px solid var(--ftth-borda); background: #fff; border-radius: 5px;
+                    padding: 9px 4px 7px; font-size: 11.5px; font-weight: 600; color: var(--ftth-texto);
+                    cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ftth-tipo i      { font-size: 17px; color: var(--ftth-azul-claro); line-height: 1; }
+.ftth-tipo.ativo i{ color: var(--ftth-amarelo); }
+.ftth-tipo:hover  { border-color: var(--ftth-azul-claro); }
+.ftth-tipo.ativo  { border-color: var(--ftth-amarelo); box-shadow: 0 0 0 2px rgba(232,163,23,.25);
+                    color: var(--ftth-azul); }
+
+.ftth-cores       { display: flex; flex-wrap: wrap; gap: 7px; }
+.ftth-cor         { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #fff;
+                    box-shadow: 0 0 0 1px var(--ftth-borda); cursor: pointer; }
+.ftth-cor.ativo   { box-shadow: 0 0 0 2px var(--ftth-azul); }
+.ftth-chk         { font-size: 12.5px; color: var(--ftth-cinza); white-space: nowrap; }
+.ftth-chk input   { vertical-align: -1px; margin-right: 3px; }
+
+.ftth-busca       { position: relative; flex: 1 1 260px; max-width: 420px; }
+.ftth-busca input { width: 100%; }
+.ftth-busca-icone { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+                    color: var(--ftth-cinza); font-size: 13px; pointer-events: none; }
+.ftth-busca-campo { padding-left: 30px; }
+.ftth-busca-lista { display: none; position: absolute; z-index: 5; left: 0; right: 0; top: 36px;
+                    background: #fff; border: 1px solid var(--ftth-borda); border-radius: 4px;
+                    box-shadow: 0 6px 18px rgba(20,35,60,.12); max-height: 320px; overflow: auto; }
+.ftth-busca-grupo { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+                    color: var(--ftth-cinza); padding: 7px 10px 3px; }
+.ftth-busca-item  { padding: 7px 10px; cursor: pointer; font-size: 13px; border-top: 1px solid #F1F4F8; }
+.ftth-busca-item:hover { background: var(--ftth-fundo); }
+
+/* Na página do mapa, o bloco de status do painel sai de cena e o rodapé encolhe:
+   a tela toda é do mapa. Vale só aqui — as outras páginas seguem o padrão do MK-AUTH. */
+body.ftth-mapa-full #systopo        { display: none !important; }
+body.ftth-mapa-full #sistema-rodape { display: none !important; }
+body.ftth-mapa-full #sistema-corpo3 { display: none !important; }
+body.ftth-mapa-full .ftth-wrap--mapa { padding: 6px 8px; }
+
+/* O #container-sistema do painel é um grid com `grid-template-rows: auto 50px`, e a
+   segunda linha é a do rodapé. Esconder o rodapé com display:none tira o CONTEÚDO, mas a
+   linha de 50px continua reservada — era essa altura fantasma que fazia a página rolar
+   mesmo com o mapa cabendo na tela. Aqui a linha vai a zero. */
+body.ftth-mapa-full #container-sistema { grid-template-rows: auto 0; min-width: 0; }
+body.ftth-mapa-full #sistema-corpo2    { min-height: 0; }
+/* A página não rola: quem rola é o mapa, por dentro. Vale só no mapa — o diagrama usa a
+   mesma classe e lá o scroll da página tem uso, quando o desenho passa da tela. */
+html.ftth-sem-scroll,
+html.ftth-sem-scroll body { overflow: hidden; height: 100%; }
+
+.ftth-mapa-area   { position: relative; }
+/* A altura final é calculada em js/mapa.js pelo espaço que sobra na janela;
+   este valor é só o ponto de partida antes do script rodar. */
+#mapa             { width: 100%; height: calc(100vh - 240px); min-height: 420px;
+                    border: 1px solid var(--ftth-borda); border-radius: 6px; }
+.ftth-rotulo      { text-shadow: 0 0 3px #fff, 0 0 3px #fff; font-weight: 600; }
+
+/* U1: a ficha abre sobre o mapa, sem trocar de página — o mapa continua no mesmo lugar. */
+.ftth-painel      { position: absolute; top: 12px; left: 12px; width: 320px; max-height: calc(100% - 24px);
+                    overflow: auto; background: #fff; border: 1px solid var(--ftth-borda);
+                    border-radius: 6px; box-shadow: 0 8px 24px rgba(20,35,60,.18); padding: 14px 16px; }
+.ftth-painel-titulo { margin: 0 0 2px; font-size: 15px; color: var(--ftth-azul); }
+.ftth-painel-fechar { position: absolute; top: 6px; right: 8px; border: 0; background: none;
+                      font-size: 20px; line-height: 1; color: var(--ftth-cinza); cursor: pointer; }
+
+/* Card flutuante do traçado (padrão UpperX) */
+.ftth-flutuante     { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+                      display: flex; align-items: center; gap: 8px; background: #16243B;
+                      color: #fff; border-radius: 8px; padding: 8px 10px;
+                      box-shadow: 0 10px 28px rgba(10,20,35,.35); z-index: 3; }
+.ftth-flutuante-info{ display: flex; flex-direction: column; line-height: 1.25; margin-right: 6px;
+                      padding: 0 8px; }
+.ftth-flutuante-info strong { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                              color: #7FE3B0; }
+.ftth-flutuante-info span   { font-size: 12.5px; }
+.ftth-flutuante .ftth-btn   { padding: 6px 12px; font-size: 12.5px; }
+
+/* Modo Mover: âmbar, porque nada ali foi gravado ainda. O verde do traçado significa
+   "em andamento e será criado"; este diz "em edição, e você ainda pode desistir". */
+.ftth-flutuante--edicao .ftth-flutuante-info strong { color: var(--ftth-amarelo); }
+.ftth-flutuante--edicao { border: 1px solid rgba(232, 163, 23, .5); }
+.ftth-flutuante-conta   { font-size: 11.5px; font-weight: 600; color: #C9D6E8;
+                          border-left: 1px solid rgba(255,255,255,.18); padding-left: 10px;
+                          white-space: nowrap; }
+
+.ftth-barra       { height: 8px; background: #EDF1F6; border-radius: 4px; overflow: hidden; margin: 8px 0 4px; }
+.ftth-barra span  { display: block; height: 100%; background: var(--ftth-verde); }
+
+/* Ficha da caixa — layout no padrão do UpperX (identificação, dados, ações, rastreio) */
+.ftth-ficha-topo    { padding-right: 20px; }
+.ftth-ficha         { display: grid; grid-template-columns: 112px 1fr; gap: 3px 10px;
+                      margin: 10px 0 6px; font-size: 12.5px; }
+.ftth-ficha dt      { font-weight: 600; color: var(--ftth-texto); }
+.ftth-ficha dd      { margin: 0; color: var(--ftth-cinza); word-break: break-word; }
+.ftth-ficha-autor   { font-size: 11px; color: var(--ftth-cinza); margin: 6px 0 10px;
+                      border-top: 1px solid #EEF2F7; padding-top: 6px; }
+
+/* text-align porque o .ftth-btn e inline-block: com width 100% e sem isto, o icone e o
+   texto ficam encostados na esquerda em vez de no meio do botao. */
+.ftth-ficha-principal { width: 100%; margin: 4px 0 8px; text-align: center; }
+.ftth-ficha-acoes   { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+/* Ficha do cabo tem duas ações, não seis: sem isso a grade de 3 fica com um buraco. */
+.ftth-ficha-acoes--duo { grid-template-columns: repeat(2, 1fr); }
+.ftth-acao          { border: 1px solid var(--ftth-borda); background: #fff; border-radius: 5px;
+                      padding: 8px 4px 6px; font-size: 11px; font-weight: 600; color: var(--ftth-azul);
+                      cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.ftth-acao i        { font-size: 15px; line-height: 1; }
+.ftth-acao:hover:not([disabled]) { border-color: var(--ftth-azul-claro); background: #F7FAFF; }
+.ftth-acao[disabled]{ color: #A9B2BD; cursor: not-allowed; background: #FAFBFC; }
+.ftth-acao--perigo  { color: var(--ftth-vermelho); }
+.ftth-acao--perigo:hover:not([disabled]) { border-color: var(--ftth-vermelho); background: #FEF6F5; }
+
+.ftth-ficha-rastreio{ margin-top: 12px; border-top: 1px solid #EEF2F7; padding-top: 8px; }
+.ftth-ficha-secao   { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+                      color: var(--ftth-cinza); margin: 0 0 6px; }
+.ftth-estimativa    { background: var(--ftth-fundo); border: 1px solid var(--ftth-borda);
+                      border-left: 4px solid var(--ftth-borda);
+                      border-radius: 5px; padding: 8px 10px; margin-bottom: 8px; }
+.ftth-estimativa strong { display: block; font-size: 15px; color: var(--ftth-azul); }
+.ftth-estimativa strong small { font-size: 11px; font-weight: 600; text-transform: uppercase;
+                                letter-spacing: .04em; color: var(--ftth-cinza);
+                                margin-left: 5px; }
+.ftth-estimativa .ftth-sub { margin: 0; }
+/* A borda esquerda diz a faixa de longe, antes de ler o número. */
+.ftth-estimativa--excelente { border-left-color: var(--ftth-verde); }
+.ftth-estimativa--bom       { border-left-color: #43A047; }
+.ftth-estimativa--limite    { border-left-color: var(--ftth-amarelo); }
+.ftth-estimativa--critico,
+.ftth-estimativa--saturado  { border-left-color: var(--ftth-vermelho); }
+.ftth-coord         { margin: 0; }
+.ftth-copiar        { border: 0; background: none; color: var(--ftth-azul-claro); cursor: pointer;
+                      font-size: 11px; text-decoration: underline; padding: 0 2px; }
+
+.ftth-pre         { font-family: Consolas, "Courier New", monospace; font-size: 11.5px;
+                    background: var(--ftth-fundo); border: 1px solid var(--ftth-borda);
+                    border-radius: 4px; padding: 10px; max-height: 260px; overflow: auto;
+                    white-space: pre-wrap; }
+
+/* ---------------------------------------------------------------- POP / inside plant
+   A grade de portas do DIO. Nao existia nada parecido em tela clara: .ftth-tipos e fixa em
+   3 colunas e aqui o painel pode ter 12 ou 144 portas. auto-fill resolve sem media query,
+   e o .row do grid-utilities nao serve porque nao tem col-md-*. */
+.ftth-pop-acoes    { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ftth-card--olt    { border-left: 4px solid var(--ftth-azul-claro); }
+
+.ftth-portas       { display: grid; gap: 8px; margin-top: 10px;
+                     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.ftth-porta        { text-align: left; background: #fff; cursor: pointer;
+                     border: 1px solid var(--ftth-borda); border-left: 4px solid #9E9E9E;
+                     border-radius: 6px; padding: 7px 9px; display: flex; flex-direction: column;
+                     gap: 2px; font-size: 11px; color: var(--ftth-cinza); }
+.ftth-porta:hover  { border-color: var(--ftth-azul-claro); }
+.ftth-porta-topo   { display: flex; align-items: center; justify-content: space-between;
+                     font-size: 12px; font-weight: 600; color: var(--ftth-texto); }
+.ftth-porta-linha  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ftth-porta-luz    { width: 8px; height: 8px; border-radius: 50%; background: #C7CFDA; }
+/* Verde: equipamento e saida. Laranja: so um dos dois. Cinza: porta vazia. */
+.ftth-porta--ok       { border-left-color: var(--ftth-verde); }
+.ftth-porta--ok .ftth-porta-luz      { background: var(--ftth-verde); }
+.ftth-porta--parcial  { border-left-color: var(--ftth-amarelo); }
+.ftth-porta--parcial .ftth-porta-luz { background: var(--ftth-amarelo); }
+
+.ftth-pop-placa    { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 8px; }
+.ftth-pop-placa label { flex: 1; display: block; }
+
+.ftth-modal-caixa--larga { width: 560px; max-width: 94vw; }
+
+/* Painel lateral da porta: fixo a direita, sem empurrar a grade. */
+.ftth-pop-painel   { position: fixed; top: 0; right: 0; bottom: 0; width: 340px; max-width: 94vw;
+                     background: #fff; border-left: 1px solid var(--ftth-borda); z-index: 3900;
+                     display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(0,0,0,.12); }
+.ftth-pop-painel-topo   { display: flex; align-items: center; justify-content: space-between;
+                          padding: 12px 14px; border-bottom: 1px solid var(--ftth-borda); }
+.ftth-pop-painel-corpo  { padding: 14px; overflow: auto; flex: 1; }
+.ftth-pop-painel-rodape { padding: 12px 14px; border-top: 1px solid var(--ftth-borda); text-align: right; }
+
+/* ---------------------------------------------------------------- toasts
+   Vive no <body>, fora de qualquer stacking context do addon: o painel lateral e os
+   modais não podem cobri-lo, senão volta a acontecer o que motivou o toast -- um aviso
+   escrito no fim de um painel que rola, e que o usuário nunca vê. */
+.ftth-toasts {
+    position: fixed; right: 16px; bottom: 20px; z-index: 5000;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    pointer-events: none;
+}
+.ftth-toast {
+    pointer-events: auto;
+    min-width: 240px; max-width: 420px;
+    background: #fff; color: var(--ftth-texto);
+    border: 1px solid var(--ftth-borda); border-left: 4px solid var(--ftth-cinza);
+    border-radius: 6px; padding: 10px 13px; font-size: 13px; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(10, 20, 35, .18);
+    transform: translateX(16px); opacity: 0;
+    transition: transform .18s ease-out, opacity .18s ease-out;
+}
+.ftth-toast.aparece { transform: translateX(0); opacity: 1; }
+.ftth-toast.sai     { transform: translateX(16px); opacity: 0; }
+.ftth-toast--ok   { border-left-color: #2E7D32; }
+.ftth-toast--info { border-left-color: var(--ftth-azul-claro); }
+.ftth-toast--avis { border-left-color: var(--ftth-amarelo); }
+.ftth-toast--erro { border-left-color: #C0392B; }
+.ftth-toast i     { margin-right: 6px; }
+.ftth-toast ul    { margin: 5px 0 0 16px; padding: 0; font-size: 12px; color: var(--ftth-cinza); }
+
+/* Dica do próximo passo dentro do card do traçado: ela muda a cada clique, e um toast por
+   clique seria martelar o usuário enquanto ele desenha. */
+.ftth-flutuante-dica { display: block; font-size: 11.5px; color: var(--ftth-azul-claro);
+                       font-weight: 600; margin-top: 2px; }
+.ftth-flutuante-dica:empty { display: none; }
+
+/* Silhueta da peça (Caixa::SILHUETAS) usada em titulo e em botao, ao lado de texto.
+   O contorno branco do desenho serve ao mapa, sobre satelite; em fundo claro ele
+   simplesmente some, e a forma continua definida pelo preenchimento. */
+.ftth-silhueta       { vertical-align: -5px; flex: none; }
+.ftth-tipo .ftth-silhueta { display: block; margin: 0 auto 2px; vertical-align: 0; }
+
+/* ---------------------------------------------------------------- clientes na porta
+   Uma linha por saida do splitter: rotulo, sinal que chega ali e o cliente (ou a busca).
+   E onde a documentacao encontra o cadastro do MK-AUTH. */
+/* SEM overflow:hidden aqui, por mais que ele arredondasse bem os cantos: a lista de
+   resultados da busca e absoluta e sai da linha da porta — cortada pelo container, ela
+   e desenhada e fica invisivel. O arredondamento vem das linhas das pontas. */
+.ftth-grupo-portas        { border: 1px solid var(--ftth-borda); border-radius: 6px;
+                            margin-bottom: 12px; }
+.ftth-grupo-portas-topo   { border-radius: 5px 5px 0 0; }
+.ftth-grupo-portas .ftth-porta-linha:last-child { border-radius: 0 0 5px 5px; }
+.ftth-grupo-portas-topo   { display: flex; align-items: baseline; gap: 10px;
+                            background: var(--ftth-fundo); padding: 8px 11px;
+                            border-bottom: 1px solid var(--ftth-borda); font-size: 13px; }
+.ftth-grupo-portas-topo span { margin-left: auto; font-size: 12px; color: var(--ftth-cinza); }
+
+/* align-items: flex-start porque a linha CRESCE quando a busca abre: com center, o
+   rotulo e o sinal ficariam no meio da altura da lista. */
+.ftth-porta-linha         { display: flex; align-items: flex-start; gap: 10px;
+                            padding: 7px 11px; border-top: 1px solid #EEF2F7; font-size: 13px; }
+.ftth-porta-linha:first-of-type { border-top: 0; }
+/* Os dois primeiros campos tem altura de uma linha so: alinham com o campo de busca. */
+.ftth-porta-linha .ftth-porta-rotulo,
+.ftth-porta-linha .ftth-porta-sinal { line-height: 26px; }
+.ftth-porta-linha.ocupada { background: #F7FAFF; }
+.ftth-porta-rotulo        { font-weight: 600; color: var(--ftth-azul); width: 34px; flex: none; }
+.ftth-porta-sinal         { font-size: 11.5px; color: var(--ftth-verde); width: 78px; flex: none; }
+.ftth-porta-sinal--sem    { color: var(--ftth-cinza); }
+.ftth-porta-cliente       { flex: 1; font-weight: 600; }
+.ftth-porta-cliente--livre{ color: var(--ftth-cinza); font-weight: 400; }
+/* Porta presa por cliente cancelado: capacidade parada que o provedor pode reaver. */
+.ftth-porta-cliente--cancelado { color: var(--ftth-vermelho); }
+.ftth-porta-linha--cancelada { background: #FEF6F5 !important; }
+.ftth-porta-acao          { padding: 4px 10px; font-size: 12px; flex: none; }
+
+/* A busca vive na propria linha da porta, para nao tirar o olho de onde o cliente vai.
+   Os resultados ficam NO FLUXO, empurrando as portas de baixo, em vez de flutuarem: um
+   dropdown absoluto dentro do corpo do modal, que rola, e sempre cortado por ele. Empurrar
+   e menos elegante e nunca some. */
+.ftth-porta-busca         { flex: 1; min-width: 0; }
+.ftth-porta-busca input   { width: 100%; padding: 5px 8px; font-size: 12.5px; }
+.ftth-porta-lista         { margin-top: 5px; background: #fff;
+                            border: 1px solid var(--ftth-borda); border-radius: 5px;
+                            max-height: 220px; overflow: auto; }
+.ftth-porta-lista:empty   { display: none; }
+.ftth-porta-item          { padding: 7px 10px; cursor: pointer; font-size: 12.5px;
+                            border-top: 1px solid #F1F4F8; line-height: 1.35; }
+.ftth-porta-item:first-child { border-top: 0; }
+.ftth-porta-item:hover    { background: var(--ftth-fundo); }
+.ftth-porta-item strong   { display: inline-block; }
+.ftth-porta-item span     { display: block; font-size: 11.5px; color: var(--ftth-cinza); }
+.ftth-porta-item--vazio   { color: var(--ftth-cinza); cursor: default; }
+.ftth-porta-item--vazio:hover { background: none; }
+/* Quem ja esta em outra porta e marcado: escolher significa MOVER, e a tela pergunta. */
+.ftth-porta-item-ja       { color: var(--ftth-amarelo) !important; font-weight: 600; }
+
+/* ------------------------------------------------------------------ rota optica
+   O mesmo painel do diagrama, aqui no tema claro do mapa. A leitura e de cima para
+   baixo, no sentido em que o sinal anda: origem, depois cada salto, depois a chegada
+   destacada -- por isso a chegada fica no topo (e a resposta que se procura) e a lista
+   logo abaixo explica como se chegou nela. */
+.ftth-rota-origem       { background: var(--ftth-fundo); border: 1px solid var(--ftth-borda);
+                          border-radius: 5px; padding: 10px 12px; margin-bottom: 10px; }
+.ftth-rota-origem .ftth-ficha { margin: 0; }
+.ftth-rota-caixa        { font-size: 14px; font-weight: 600; color: var(--ftth-azul);
+                          margin: 0 0 6px; }
+
+/* Cada salto e uma linha so: o que e, onde, quanto custou em dB. */
+.ftth-rota-salto        { display: flex; align-items: baseline; gap: 8px;
+                          padding: 6px 10px; font-size: 12.5px;
+                          border-top: 1px solid #F1F4F8; }
+.ftth-rota-salto:first-child { border-top: 0; }
+.ftth-rota-via          { font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+                          letter-spacing: .04em; color: var(--ftth-cinza);
+                          width: 62px; flex: none; }
+.ftth-rota-perda        { margin-left: auto; font-variant-numeric: tabular-nums;
+                          color: var(--ftth-vermelho); font-weight: 600; flex: none; }
+
+/* O trecho de cabo e o unico salto que atravessa a rua: recuado e com a seta, para a
+   lista virar um traçado e nao um extrato. */
+.ftth-rota-cabo         { display: flex; align-items: baseline; gap: 6px;
+                          padding: 6px 10px 6px 20px; font-size: 12px;
+                          color: var(--ftth-cinza); border-top: 1px solid #F1F4F8; }
+.ftth-rota-cabo i       { color: var(--ftth-azul-claro); }
+
+/* Cabecalho de caixa: agrupa os saltos internos e ja mostra com quanto o sinal chegou ali. */
+.ftth-rota-caixa-salto  { display: flex; justify-content: space-between; align-items: baseline;
+                          background: var(--ftth-fundo); border-top: 1px solid var(--ftth-borda);
+                          padding: 5px 10px; margin-top: 4px;
+                          font-size: 12px; font-weight: 600; color: var(--ftth-azul); }
+.ftth-rota-caixa-salto strong { font-variant-numeric: tabular-nums; }

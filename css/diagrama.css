@@ -1,0 +1,482 @@
+/* ftth_doc :: diagrama da caixa — tema ESCURO, escopado em .ftth-diagrama.
+ *
+ * Nada aqui vaza para as outras telas: todo seletor começa em .ftth-diagrama. O ftth.css
+ * continua claro, como sempre foi. O escuro é necessário porque as cores de fibra da norma
+ * incluem branco, amarelo e aqua, que somem em fundo claro.
+ *
+ * O tom dos nós (#16243B) é o mesmo do card flutuante do mapa, para o addon parecer um só. */
+
+.ftth-diagrama {
+    --dg-fundo:    #0E1726;
+    --dg-grade:    #1C2B42;
+    --dg-no:       #16243B;
+    --dg-borda:    #2E4162;
+    --dg-texto:    #E6EDF7;
+    --dg-suave:    #8FA3C0;
+    --dg-linha:    #9FB3CE;
+    --dg-sel:      #29B6F6;
+    --dg-atend:    #1F9D55;
+    --dg-deriv:    #8E24AA;
+    --dg-alerta:   #E8A317;
+
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* ---------------------------------------------------------------- barra superior
+   A barra é CLARA, no padrão do mapa: o escuro vale para o canvas, onde ele é necessário
+   (as cores de fibra da norma incluem branco, amarelo e aqua). Na barra ele só criava uma
+   segunda identidade visual dentro do mesmo addon. */
+.ftth-diagrama .ftth-dg-barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #fff;
+    border: 1px solid var(--ftth-borda);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--ftth-texto);
+}
+.ftth-diagrama .ftth-dg-titulo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ftth-diagrama .ftth-dg-titulo strong { font-size: 15px; color: var(--ftth-azul); }
+.ftth-diagrama .ftth-dg-titulo > i { color: var(--ftth-azul-claro); }
+.ftth-diagrama .ftth-dg-barra .ftth-dg-sub { color: var(--ftth-cinza); font-size: 12px; }
+/* Os botões voltam ao .ftth-btn--sec do resto do addon: fundo branco, borda cinza,
+   texto azul — os mesmos do mapa. */
+.ftth-diagrama .ftth-dg-barra .ftth-btn--sec {
+    background: #fff; color: var(--ftth-azul); border: 1px solid var(--ftth-borda);
+}
+.ftth-diagrama .ftth-dg-barra .ftth-btn--sec:hover:not([disabled]) {
+    border-color: var(--ftth-azul-claro); color: var(--ftth-azul-claro);
+}
+.ftth-diagrama .ftth-dg-sub { color: var(--dg-suave); font-size: 12px; }
+.ftth-diagrama .ftth-dg-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- faixas de resposta */
+.ftth-diagrama .ftth-dg-faixa {
+    border-radius: 6px; padding: 8px 12px; font-size: 13px;
+    border: 1px solid var(--dg-borda); background: var(--dg-no); color: var(--dg-texto);
+}
+.ftth-diagrama .ftth-dg-faixa--ok   { border-color: var(--dg-atend);  color: #7FE3B0; }
+.ftth-diagrama .ftth-dg-faixa--avis { border-color: var(--dg-alerta); color: #FFD98A; }
+.ftth-diagrama .ftth-dg-faixa--erro { border-color: #C0392B;          color: #FFAFA6; }
+.ftth-diagrama .ftth-dg-faixa ul { margin: 4px 0 0 18px; padding: 0; }
+
+
+/* ---------------------------------------------------------------- canvas */
+.ftth-diagrama .ftth-dg-canvas {
+    position: relative;
+    background-color: var(--dg-fundo);
+    background-image: radial-gradient(var(--dg-grade) 1px, transparent 1px);
+    background-size: 22px 22px;
+    border: 1px solid var(--dg-borda);
+    border-radius: 6px;
+    overflow: auto;
+}
+.ftth-diagrama .ftth-dg-canvas svg { display: block; }
+.ftth-diagrama .ftth-dg-carregando {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--dg-suave); font-size: 13px;
+}
+.ftth-diagrama .ftth-dg-vazio {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--dg-suave); font-size: 13px; text-align: center; padding: 24px;
+}
+
+/* ---------------------------------------------------------------- nós no SVG */
+.ftth-diagrama .dg-no-fundo { fill: var(--dg-no); stroke: var(--dg-borda); }
+.ftth-diagrama .dg-no.sel .dg-no-fundo { stroke: var(--dg-sel); stroke-width: 2; }
+.ftth-diagrama .dg-no-cabecalho { fill: #1E3050; }
+.ftth-diagrama .dg-no-titulo { fill: var(--dg-texto); font: 600 12px sans-serif; }
+.ftth-diagrama .dg-no-sub    { fill: var(--dg-suave); font: 11px sans-serif; }
+.ftth-diagrama .dg-no-arrasta { cursor: move; }
+
+.ftth-diagrama .dg-selo { font: 600 9px sans-serif; fill: #fff; }
+.ftth-diagrama .dg-selo-fundo--atend { fill: var(--dg-atend); }
+.ftth-diagrama .dg-selo-fundo--deriv { fill: var(--dg-deriv); }
+.ftth-diagrama .dg-alerta { fill: var(--dg-alerta); font: 600 10px sans-serif; }
+
+/* Pontas: livre (vazada), conectada (sólida), indisponível (apagada). */
+.ftth-diagrama .dg-ponta { cursor: pointer; }
+.ftth-diagrama .dg-ponta-marca { stroke-width: 2; }
+.ftth-diagrama .dg-ponta--livre       .dg-ponta-marca { fill: var(--dg-no); }
+.ftth-diagrama .dg-ponta--conectada   .dg-ponta-marca { }
+.ftth-diagrama .dg-ponta--indisponivel { cursor: not-allowed; opacity: .25; }
+.ftth-diagrama .dg-ponta--alvo        .dg-ponta-marca { stroke: var(--dg-sel); stroke-width: 3; }
+.ftth-diagrama .dg-ponta--origem      .dg-ponta-marca { stroke: var(--dg-sel); stroke-width: 3; }
+.ftth-diagrama .dg-ponta-rotulo { fill: var(--dg-texto); font: 11px sans-serif; }
+.ftth-diagrama .dg-ponta-cliente { fill: #7FE3B0; font: 10px sans-serif; }
+.ftth-diagrama .dg-ponta:hover .dg-ponta-rotulo { fill: var(--dg-sel); }
+
+/* ---------------------------------------------------------------- ligações */
+.ftth-diagrama .dg-ligacao { fill: none; stroke: var(--dg-linha); stroke-width: 2; cursor: pointer; }
+.ftth-diagrama .dg-ligacao--sel { stroke: var(--dg-sel); stroke-width: 3; }
+.ftth-diagrama .dg-ligacao-area { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; }
+.ftth-diagrama .dg-preview {
+    fill: none; stroke: var(--dg-sel); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- drawer e cartões */
+.ftth-diagrama .ftth-dg-drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 300px; z-index: 5;
+    background: var(--dg-no); border-left: 1px solid var(--dg-borda);
+    color: var(--dg-texto); display: flex; flex-direction: column;
+}
+.ftth-diagrama .ftth-dg-drawer-topo {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid var(--dg-borda);
+}
+.ftth-diagrama .ftth-dg-drawer-corpo { padding: 12px; overflow: auto; }
+.ftth-diagrama .ftth-dg-cartoes { display: flex; flex-direction: column; gap: 8px; }
+.ftth-diagrama .ftth-dg-cartao {
+    text-align: left; background: #1E3050; color: var(--dg-texto);
+    border: 1px solid var(--dg-borda); border-left: 4px solid var(--dg-deriv);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer; display: block; width: 100%;
+}
+.ftth-diagrama .ftth-dg-cartao:hover { border-color: var(--dg-sel); }
+.ftth-diagrama .ftth-dg-cartao strong { display: block; font-size: 13px; }
+.ftth-diagrama .ftth-dg-cartao span { color: var(--dg-suave); font-size: 11px; }
+.ftth-diagrama .ftth-dg-cartao--outro { border-left-color: var(--dg-alerta); }
+
+/* O modal reaproveita .ftth-modal do ftth.css; aqui só o tema escuro por dentro. */
+.ftth-diagrama .ftth-modal-caixa {
+    background: var(--dg-no); color: var(--dg-texto); border: 1px solid var(--dg-borda);
+}
+.ftth-diagrama .ftth-modal-topo, .ftth-diagrama .ftth-modal-rodape { border-color: var(--dg-borda); }
+.ftth-diagrama .ftth-modal .ftth-campo {
+    background: #0E1726; color: var(--dg-texto); border: 1px solid var(--dg-borda);
+}
+.ftth-diagrama .ftth-modal .ftth-rotulo-campo { color: var(--dg-suave); }
+.ftth-diagrama .ftth-modal .ftth-sub { color: var(--dg-suave); font-size: 11px; }
+.ftth-diagrama .ftth-modal .ftth-tipo {
+    background: #1E3050; color: var(--dg-texto); border: 1px solid var(--dg-borda);
+}
+.ftth-diagrama .ftth-modal .ftth-tipo.ativo { border-color: var(--dg-sel); background: #10305A; }
+
+/* ---------------------------------------------------------------- tela estreita */
+@media (max-width: 720px) {
+    .ftth-diagrama .ftth-dg-barra { padding: 6px 8px; }
+    .ftth-diagrama .ftth-dg-drawer { width: 100%; }
+}
+
+/* Botão ⇄ do cabeçalho: vira as pontas do nó para o outro lado. */
+.ftth-diagrama .dg-no-botao { cursor: pointer; }
+.ftth-diagrama .dg-no-botao-fundo { fill: #2E4162; stroke: #44597C; }
+.ftth-diagrama .dg-no-botao:hover .dg-no-botao-fundo { fill: var(--dg-sel); stroke: var(--dg-sel); }
+.ftth-diagrama .dg-no-botao-icone { fill: var(--dg-texto); font: 13px sans-serif; pointer-events: none; }
+
+/* ---------------------------------------------------------------- ilustração do cabo
+ * Desenhada em SVG a partir das fibras reais do cabo — nada de imagem embutida, para o
+ * desenho não mentir sobre a capacidade e para escalar em qualquer zoom. */
+.ftth-diagrama .dg-cabo-capa {
+    fill: #0B1017; stroke: #3A4A63; stroke-width: 1;
+}
+.ftth-diagrama .dg-cabo-tubo-linha { fill: none; stroke-width: 6; stroke-linecap: round; opacity: .85; }
+.ftth-diagrama .dg-cabo-fibra-borda { fill: none; stroke-width: 5; opacity: .35; }
+.ftth-diagrama .dg-cabo-num { fill: var(--dg-suave); font: 9px sans-serif; pointer-events: none; }
+.ftth-diagrama .dg-cabo-boca { fill: #22303F; stroke: #9FB3CE; stroke-width: 1; }
+.ftth-diagrama .dg-cabo-fibra { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.ftth-diagrama .dg-cabo-mais { fill: var(--dg-suave); font: 10px sans-serif; }
+
+/* ---------------------------------------------------------------- ilustração do splitter
+ * Cunha com a entrada de um lado e a coluna de vias do outro, no número real de saídas.
+ * Via ocupada fica sólida: mostra a lotação do splitter de relance. */
+.ftth-diagrama .dg-spl-corpo { fill: #1E3050; stroke: #44597C; stroke-width: 1; }
+.ftth-diagrama .dg-spl-in    { fill: var(--dg-sel); stroke: #0B1017; stroke-width: 2; }
+.ftth-diagrama .dg-spl-in--vazio { fill: #22303F; stroke: var(--dg-alerta); }
+.ftth-diagrama .dg-spl-via {
+    fill: none; stroke: var(--dg-atend); stroke-width: 1.5;
+}
+.ftth-diagrama .dg-spl-via--usada { fill: var(--dg-atend); stroke: var(--dg-atend); }
+.ftth-diagrama .dg-spl-num { fill: #fff; font: 600 8px sans-serif; pointer-events: none; }
+
+/* Pernas que ligam a entrada e cada via à sua bolinha de conexão. */
+.ftth-diagrama .dg-spl-perna { stroke: #44597C; stroke-width: 2; }
+
+/* ---------------------------------------------------------------- scroll no lugar certo
+ * Item flex tem `min-width: auto` por padrão, então não encolhe abaixo do conteúdo: o SVG
+ * largo empurrava o canvas, que empurrava a página, e o scroll acabava no documento —
+ * levando junto o menu do MK-AUTH e a barra do diagrama. Com min-width/height zerados o
+ * canvas se limita à janela e rola por dentro, deixando a barra sempre à vista. */
+.ftth-diagrama { min-width: 0; max-width: 100%; }
+.ftth-diagrama .ftth-dg-canvas { min-width: 0; min-height: 0; max-width: 100%; }
+/* A pagina do diagrama NAO rola: quem rola e o canvas, e so ele. Assim o menu do
+   MK-AUTH e a barra do diagrama ficam sempre a vista, por maior que seja o desenho. */
+body.ftth-dg-body { overflow: hidden; }
+.ftth-diagrama, .ftth-diagrama * { box-sizing: border-box; }
+.ftth-diagrama { overflow: hidden; }
+.ftth-diagrama .ftth-dg-barra { position: sticky; top: 0; z-index: 6; }
+
+/* Tela cheia de verdade: o diagrama ocupa o monitor, sem o painel em volta. */
+.ftth-diagrama:fullscreen {
+    background: var(--dg-fundo);
+    padding: 8px;
+    gap: 8px;
+}
+.ftth-diagrama:fullscreen .ftth-dg-canvas { border-radius: 4px; }
+
+/* Os containers do painel podem ser mais largos que a janela. Como a barra usa
+   space-between, os botoes iam parar na ponta direita DELES — fora da tela. Travar os
+   ancestrais conhecidos evita que a largura do painel mande no diagrama. */
+body.ftth-dg-body #sistema-corpo,
+body.ftth-dg-body #sistema-corpo2,
+body.ftth-dg-body #sistema-corpo3,
+body.ftth-dg-body #sistema-conteudo { max-width: 100vw; overflow-x: hidden; }
+
+/* ---------------------------------------------------------------- barra compacta
+ * Cada pixel gasto aqui é pixel a menos de diagrama. Espaçamento mínimo entre o menu do
+ * painel, a barra e o canvas, e cantos menos arredondados para a tela parecer contínua. */
+.ftth-diagrama { gap: 4px; }
+body.ftth-mapa-full .ftth-wrap--mapa.ftth-diagrama { padding: 4px 6px 6px; }
+.ftth-diagrama .ftth-dg-barra { padding: 4px 10px; border-radius: 4px; gap: 8px; }
+.ftth-diagrama .ftth-dg-titulo { gap: 6px; }
+.ftth-diagrama .ftth-dg-titulo strong { font-size: 14px; }
+.ftth-diagrama .ftth-dg-acoes { gap: 4px; }
+.ftth-diagrama .ftth-dg-barra .ftth-btn { padding: 4px 10px; font-size: 12px; }
+.ftth-diagrama .ftth-dg-faixa { padding: 4px 10px; border-radius: 4px; }
+.ftth-diagrama .ftth-dg-canvas { border-radius: 4px; }
+
+/* ---------------------------------------------------------------- drawer deslizante
+ * Fica preso à janela (a página não rola) e o JS o alinha exatamente com o canvas, para
+ * não invadir a barra do diagrama nem passar por baixo do menu do painel. Fechado, ele
+ * espera fora da tela à direita; abrir é deslizar para dentro. */
+.ftth-diagrama .ftth-dg-drawer {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 300px;
+    max-width: 92vw;
+    z-index: 4;
+    transform: translateX(100%);
+    transition: transform .22s ease-out;
+    visibility: hidden;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
+}
+.ftth-diagrama .ftth-dg-drawer.aberto { transform: translateX(0); visibility: visible; }
+
+/* ---------------------------------------------------------------- avisos flutuantes
+ * Mensagem de resultado não merece uma faixa fixa empurrando o diagrama para baixo: ela
+ * aparece, é lida e sai. Só a seleção de ligação continua ancorada, porque tem botão. */
+.ftth-dg-toasts {
+    position: fixed; right: 16px; bottom: 28px; z-index: 20;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+    pointer-events: none;
+}
+.ftth-dg-toast {
+    pointer-events: auto;
+    min-width: 220px; max-width: 380px;
+    background: #16243B; color: var(--dg-texto);
+    border: 1px solid var(--dg-borda); border-left: 4px solid var(--dg-suave);
+    border-radius: 6px; padding: 9px 12px; font-size: 13px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+    transform: translateX(16px); opacity: 0;
+    transition: transform .18s ease-out, opacity .18s ease-out;
+}
+.ftth-dg-toast.aparece { transform: translateX(0); opacity: 1; }
+.ftth-dg-toast.sai     { transform: translateX(16px); opacity: 0; }
+.ftth-dg-toast--ok   { border-left-color: var(--dg-atend);  }
+.ftth-dg-toast--avis { border-left-color: var(--dg-alerta); }
+.ftth-dg-toast--erro { border-left-color: #C0392B; }
+.ftth-dg-toast ul { margin: 4px 0 0 16px; padding: 0; font-size: 12px; color: var(--dg-suave); }
+.ftth-dg-toast i { margin-right: 6px; }
+
+/* ---------------------------------------------------------------- abas e lista do drawer */
+.ftth-diagrama .ftth-dg-abas {
+    display: flex; border-bottom: 1px solid var(--dg-borda); background: var(--dg-no);
+}
+.ftth-diagrama .ftth-dg-aba {
+    flex: 1; background: none; border: 0; border-bottom: 2px solid transparent;
+    color: var(--dg-suave); padding: 9px 6px; font-size: 12px; cursor: pointer;
+}
+.ftth-diagrama .ftth-dg-aba:hover { color: var(--dg-texto); }
+.ftth-diagrama .ftth-dg-aba.ativa { color: var(--dg-sel); border-bottom-color: var(--dg-sel); }
+
+.ftth-diagrama .ftth-dg-grupo {
+    color: var(--dg-suave); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .4px; margin: 2px 0 8px;
+}
+.ftth-diagrama .ftth-dg-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: #1E3050; border: 1px solid var(--dg-borda); border-radius: 6px;
+    padding: 8px 10px; margin-bottom: 8px;
+}
+.ftth-diagrama .ftth-dg-item--spl { border-left: 4px solid var(--dg-deriv); }
+.ftth-diagrama .ftth-dg-item--spl-at { border-left-color: var(--dg-atend); }
+.ftth-diagrama .ftth-dg-item--cabo { border-left: 4px solid var(--dg-sel); }
+.ftth-diagrama .ftth-dg-item strong { display: block; font-size: 13px; color: var(--dg-texto); }
+.ftth-diagrama .ftth-dg-item span { font-size: 11px; color: var(--dg-suave); }
+.ftth-diagrama .ftth-dg-item-acoes { display: flex; gap: 4px; flex: 0 0 auto; }
+.ftth-diagrama .ftth-dg-mini {
+    background: #16243B; color: var(--dg-texto); border: 1px solid var(--dg-borda);
+    border-radius: 5px; width: 28px; height: 28px; cursor: pointer; font-size: 13px;
+}
+.ftth-diagrama .ftth-dg-mini:hover { border-color: var(--dg-sel); color: var(--dg-sel); }
+.ftth-diagrama .ftth-dg-mini--perigo:hover { border-color: #C0392B; color: #FFAFA6; }
+.ftth-diagrama .ftth-dg-vazio-lista { color: var(--dg-suave); font-size: 12px; padding: 8px 0; }
+
+/* ---------------------------------------------------------------- ação flutuante
+ * Fica junto da linha selecionada, dentro do canvas — rola com o desenho e não rouba
+ * uma faixa inteira da tela só para oferecer um botão. */
+.ftth-diagrama .ftth-dg-flutua {
+    position: absolute; z-index: 3; transform: translate(-50%, -50%);
+}
+.ftth-diagrama .ftth-dg-flutua-btn {
+    background: #10305A; color: var(--dg-texto);
+    border: 1px solid var(--dg-sel); border-radius: 14px;
+    padding: 4px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+}
+.ftth-diagrama .ftth-dg-flutua-btn:hover { background: #C0392B; border-color: #C0392B; }
+.ftth-diagrama .ftth-dg-flutua-btn i { margin-right: 4px; }
+
+/* ---------------------------------------------------------------- sinal vivo na ponta
+   Halo pulsante em volta da bolinha: a fibra tem caminho optico ate uma porta de DIO com
+   equipamento. E a primeira pergunta de quem abre uma caixa em campo -- "isso aqui tem
+   sinal?" -- respondida sem precisar clicar em nada. */
+.dg-ponta-pulso {
+    fill: none;
+    stroke: var(--dg-atend);
+    stroke-width: 1.6;
+    opacity: .9;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dg-pulso 1.9s ease-out infinite;
+}
+@keyframes dg-pulso {
+    0%   { transform: scale(.75); opacity: .95; }
+    70%  { transform: scale(1.65); opacity: 0; }
+    100% { transform: scale(1.65); opacity: 0; }
+}
+/* Quem prefere a tela parada (ou usa maquina fraca) ve o halo fixo, nao piscando. */
+@media (prefers-reduced-motion: reduce) {
+    .dg-ponta-pulso { animation: none; opacity: .55; }
+}
+.dg-ponta--ficha .dg-ponta-marca { stroke-width: 3; }
+
+/* ---------------------------------------------------------------- ficha de potencia */
+/* Mesma camada do drawer de Ferramentas: os dois ocupam a mesma faixa a direita, entao
+   um fecha o outro em vez de disputarem z-index. */
+.ftth-diagrama .ftth-dg-drawer--ficha { z-index: 5; }
+
+.ftth-diagrama .ftth-dg-ficha-ponta {
+    display: flex; align-items: center; gap: 9px;
+    padding-bottom: 10px; margin-bottom: 10px;
+    border-bottom: 1px solid var(--dg-borda);
+}
+.ftth-diagrama .ftth-dg-ficha-bola {
+    width: 14px; height: 14px; border-radius: 50%; border: 2px solid; flex: none;
+}
+.ftth-diagrama .ftth-dg-ficha-ponta strong { font-size: 13px; display: block; }
+
+.ftth-diagrama .ftth-dg-origem {
+    background: #101B2D; border: 1px solid var(--dg-borda); border-radius: 7px;
+    padding: 10px 12px; margin-bottom: 10px;
+}
+.ftth-diagrama .ftth-dg-origem-titulo {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--dg-suave); margin: 0 0 4px;
+}
+.ftth-diagrama .ftth-dg-origem-caixa {
+    font-size: 15px; font-weight: 600; margin: 0 0 8px; color: var(--dg-texto);
+}
+.ftth-diagrama .ftth-dg-origem-grade {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px;
+}
+.ftth-diagrama .ftth-dg-origem-grade span {
+    display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--dg-suave);
+}
+.ftth-diagrama .ftth-dg-origem-grade strong {
+    font-size: 12px; font-weight: 600; word-break: break-word;
+}
+
+/* O numero que interessa, com a cor da faixa em que ele caiu. */
+.ftth-diagrama .ftth-dg-chegada {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    border: 1px solid var(--dg-borda); border-left: 4px solid var(--dg-suave);
+    border-radius: 6px; padding: 9px 11px; margin-bottom: 12px;
+}
+.ftth-diagrama .ftth-dg-chegada span   { font-size: 11px; color: var(--dg-suave); }
+.ftth-diagrama .ftth-dg-chegada strong { font-size: 18px; margin-left: auto; }
+.ftth-diagrama .ftth-dg-classe         { width: 100%; font-weight: 600; }
+.ftth-diagrama .ftth-dg-chegada--excelente { border-left-color: var(--dg-atend); }
+.ftth-diagrama .ftth-dg-chegada--bom       { border-left-color: #43A047; }
+.ftth-diagrama .ftth-dg-chegada--limite    { border-left-color: var(--dg-alerta); }
+.ftth-diagrama .ftth-dg-chegada--critico,
+.ftth-diagrama .ftth-dg-chegada--saturado  { border-left-color: #C0392B; }
+
+.ftth-diagrama .ftth-dg-ficha-secao {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--dg-suave); margin: 0 0 6px;
+}
+
+/* Cada linha da rota: o que aconteceu ali e quanto custou. */
+.ftth-diagrama .ftth-dg-salto-caixa {
+    display: flex; align-items: baseline; gap: 8px;
+    margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid var(--dg-borda);
+    font-size: 12.5px; font-weight: 600;
+}
+.ftth-diagrama .ftth-dg-salto-caixa strong { margin-left: auto; color: var(--dg-sel); }
+
+.ftth-diagrama .ftth-dg-salto,
+.ftth-diagrama .ftth-dg-salto-cabo {
+    display: flex; align-items: baseline; gap: 6px;
+    font-size: 11.5px; color: var(--dg-texto); padding: 4px 0 4px 10px;
+    border-left: 2px solid var(--dg-borda); margin-left: 3px;
+}
+.ftth-diagrama .ftth-dg-salto-cabo { color: var(--dg-suave); font-style: italic; }
+.ftth-diagrama .ftth-dg-salto-tipo {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+    background: #1C2B42; border-radius: 3px; padding: 1px 5px; color: var(--dg-suave);
+}
+.ftth-diagrama .ftth-dg-perda { margin-left: auto; color: var(--dg-alerta); flex: none; }
+
+.ftth-diagrama .ftth-dg-sem-rota {
+    background: #1C2B42; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px; color: var(--dg-suave);
+}
+.ftth-diagrama .ftth-dg-sem-rota i { margin-right: 6px; }
+
+/* ---------------------------------------------------------------- emenda x passagem
+   "//" cruzando a linha = fusao (custa 0,10 dB), a marca de interrupcao do desenho tecnico.
+   Linha lisa = passagem: a fibra atravessa a caixa numa sangria, sem ser cortada, e nao
+   perde nada. O que tem perda e que se destaca; o caso comum fica limpo. */
+.dg-emenda {
+    fill: none;
+    stroke: var(--dg-texto);
+    stroke-width: 2;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+.dg-ligacao--sel ~ .dg-emenda { stroke: var(--dg-sel); }
+
+/* ---------------------------------------------------------------- previa da fusao em lote
+   Isto cria dezenas de ligacoes de uma vez: ver antes o que vai acontecer e mais barato
+   do que desfazer vinte fusoes depois. */
+.ftth-diagrama .ftth-dg-previa {
+    display: flex; flex-direction: column; gap: 2px;
+    background: #101B2D; border: 1px solid var(--dg-borda);
+    border-left: 4px solid var(--dg-atend);
+    border-radius: 6px; padding: 10px 12px; margin-top: 10px;
+}
+.ftth-diagrama .ftth-dg-previa strong { font-size: 15px; color: var(--dg-texto); }
+.ftth-diagrama .ftth-dg-previa span   { font-size: 12px; color: var(--dg-suave); }
+.ftth-diagrama .ftth-dg-previa-nota   { font-size: 11.5px; color: var(--dg-alerta); }
+.ftth-diagrama .ftth-dg-previa-lista {
+    margin: 8px 0 0 16px; padding: 0; font-size: 11.5px; color: var(--dg-suave);
+}
+.ftth-diagrama .ftth-dg-previa-lista li { margin-bottom: 2px; }
+
+/* O .ftth-aviso do ftth.css e claro: dentro do drawer escuro o texto sumia. Aqui ele
+   ganha o fundo do tema, mantendo a barra colorida que diz de que tipo e o recado. */
+.ftth-diagrama .ftth-aviso {
+    background: #1C2B42; color: var(--dg-texto);
+    border-left: 3px solid var(--dg-alerta); border-radius: 4px;
+    padding: 9px 11px; font-size: 12.5px; margin: 10px 0 0;
+}
+.ftth-diagrama .ftth-aviso--erro { border-left-color: #C0392B; }
+.ftth-diagrama .ftth-aviso--ok   { border-left-color: var(--dg-atend); }
+.ftth-diagrama .ftth-dg-drawer-corpo .ftth-campo { width: 100%; }
