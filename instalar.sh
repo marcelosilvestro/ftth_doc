@@ -99,6 +99,9 @@ ao_sair() {
         erro "a instalacao falhou (codigo $rc)"
         reverter
         [ -n "$DUMP" ] && echo "  backup do banco: $DUMP" >&2
+        if [ -n "$TMP" ] && [ -f "$TMP/instalacao_nova" ]; then
+            echo "  os arquivos ficaram em $DEST: rode o instalador de novo para concluir" >&2
+        fi
         [ -n "$LOG" ] && echo "  log: $LOG" >&2
     fi
     [ -n "$TMP" ] && rm -rf "$TMP" || true
@@ -473,8 +476,12 @@ publicar() {
         done
         mv "$DEST" "$antigo"
         desfazer_push "rm -rf '$DEST'; mv '$antigo' '$DEST'"
+    else
+        # Instalacao nova: se algo falhar daqui em diante, os arquivos FICAM. Apagar seria pior,
+        # porque o schema pode ja ter sido aplicado — um servidor com tabelas e sem codigo da
+        # mais trabalho de consertar do que um com o codigo no lugar e o menu pendente.
+        : > "$TMP/instalacao_nova"
     fi
-
     mv "$raiz" "$DEST"
     ok "arquivos publicados em $DEST"
     echo "$antigo" > "$TMP/antigo"
@@ -550,9 +557,14 @@ registrar_menu() {
     # so a minha e acrescentar a minha no fim; nada de outro addon pode ser tocado.
     [ -f "$ADDONJS" ] || : > "$ADDONJS"
 
-    local antes_outros bak
+    # Contar em duas etapas, nunca dentro da aritmetica: "grep -c" sem match imprime 0 E sai
+    # com 1, entao um "|| echo 0" na mesma substituicao produz DOIS zeros e a conta vira "0 0".
+    # So acontece em servidor que ainda nao tem a linha do addon — foi o que derrubou a
+    # primeira instalacao limpa, na VM zerada.
+    local antes_outros antes_minhas bak
     antes_outros="$(grep -c 'add_menu\.' "$ADDONJS" 2>/dev/null || true)"
-    antes_outros="$(( antes_outros - $(grep -c "$MENU_MARCA" "$ADDONJS" 2>/dev/null || echo 0) ))"
+    antes_minhas="$(grep -c "$MENU_MARCA" "$ADDONJS" 2>/dev/null || true)"
+    antes_outros=$(( ${antes_outros:-0} - ${antes_minhas:-0} ))
 
     bak="$ADDONJS.bak-$(date +%Y%m%d%H%M%S)"
     cp -p "$ADDONJS" "$bak"
@@ -563,16 +575,18 @@ registrar_menu() {
         printf '\n' >> "$ADDONJS"
     fi
 
-    grep -v "$MENU_MARCA" "$ADDONJS" > "$TMP/addon.js" || true
-    printf '%s\n' "$MENU_LINHA" >> "$TMP/addon.js"
+    grep -v "$MENU_MARCA" "$ADDONJS" > "$TMP/addon.js.novo" || true
+    printf '%s\n' "$MENU_LINHA" >> "$TMP/addon.js.novo"
 
-    chown --reference="$ADDONJS" "$TMP/addon.js" 2>/dev/null || true
-    chmod --reference="$ADDONJS" "$TMP/addon.js" 2>/dev/null || chmod 644 "$TMP/addon.js"
-    mv "$TMP/addon.js" "$ADDONJS"
+    chown --reference="$ADDONJS" "$TMP/addon.js.novo" 2>/dev/null || true
+    chmod --reference="$ADDONJS" "$TMP/addon.js.novo" 2>/dev/null || chmod 644 "$TMP/addon.js.novo"
+    mv "$TMP/addon.js.novo" "$ADDONJS"
 
     local minhas outros
-    minhas="$(grep -c "$MENU_MARCA" "$ADDONJS" || true)"
-    outros="$(( $(grep -c 'add_menu\.' "$ADDONJS" || true) - minhas ))"
+    minhas="$(grep -c "$MENU_MARCA" "$ADDONJS" 2>/dev/null || true)"
+    outros="$(grep -c 'add_menu\.' "$ADDONJS" 2>/dev/null || true)"
+    minhas=${minhas:-0}
+    outros=$(( ${outros:-0} - minhas ))
 
     if [ "$minhas" -ne 1 ] || [ "$outros" -ne "$antes_outros" ]; then
         cp -p "$bak" "$ADDONJS"
