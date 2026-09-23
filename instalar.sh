@@ -432,9 +432,14 @@ backup_banco() {
     mkdir -p "$BCKP"
     chmod 700 "$BCKP"
     DUMP="$BCKP/tab_ftth-$(date +%Y%m%d-%H%M%S).sql.gz"
-    # shellcheck disable=SC2086
+    # A lista de tabelas vira um array: sem isso o shell teria de dividir a string por
+    # espacos, que e justamente o tipo de coisa que quebra com um nome inesperado.
+    local -a lista=()
+    while IFS= read -r tabela; do
+        [ -n "$tabela" ] && lista+=("$tabela")
+    done <<< "$tabelas"
     mysqldump --defaults-extra-file="$cnf" --single-transaction --quick \
-              "$DB_NOME" $(echo "$tabelas" | tr '\n' ' ') 2>/dev/null | gzip -9 > "$DUMP"
+              "$DB_NOME" "${lista[@]}" 2>/dev/null | gzip -9 > "$DUMP"
     chmod 600 "$DUMP"
     ok "backup do banco em $DUMP ($(du -h "$DUMP" | cut -f1))"
 
@@ -446,7 +451,8 @@ backup_codigo() {
     [ -d "$DEST" ] || return 0
     [ "$OPT_BACKUP" -eq 1 ] || return 0
     mkdir -p "$BCKP"
-    local alvo="$BCKP/arquivos-$(date +%Y%m%d-%H%M%S).tgz"
+    local alvo
+    alvo="$BCKP/arquivos-$(date +%Y%m%d-%H%M%S).tgz"
     tar czf "$alvo" -C "$(dirname "$DEST")" "$ADDON" 2>/dev/null || true
     ok "backup dos arquivos em $alvo"
     ls -1t "$BCKP"/arquivos-*.tgz 2>/dev/null | tail -n +4 | xargs -r rm -f
@@ -544,7 +550,7 @@ registrar_menu() {
     # so a minha e acrescentar a minha no fim; nada de outro addon pode ser tocado.
     [ -f "$ADDONJS" ] || : > "$ADDONJS"
 
-    local antes_outros depois_outros bak
+    local antes_outros bak
     antes_outros="$(grep -c 'add_menu\.' "$ADDONJS" 2>/dev/null || true)"
     antes_outros="$(( antes_outros - $(grep -c "$MENU_MARCA" "$ADDONJS" 2>/dev/null || echo 0) ))"
 
