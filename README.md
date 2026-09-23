@@ -4,7 +4,7 @@ Addon para MK-AUTH que documenta a planta FTTH: caixas e cabos no mapa, importa�
 projeto, diagrama de emendas de cada CEO/CTO, POP com OLT e DIO, e cálculo de potência do sinal
 que chega em cada cliente.
 
-> **Versão 0.9.0 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
+> **Versão 0.9.1 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
 > primeira versão publicada. Instale primeiro num servidor de teste.
 
 ## Instalação
@@ -46,7 +46,7 @@ wget -O - https://raw.githubusercontent.com/marcelosilvestro/ftth_doc/main/insta
 wget -O - .../instalar.sh | bash -s -- --diagnostico
 
 # instalar uma versão específica
-wget -O - .../instalar.sh | bash -s -- --versao=v0.9.0
+wget -O - .../instalar.sh | bash -s -- --versao=v0.9.1
 
 # remover as tabelas que o addon aposentou
 wget -O - .../instalar.sh | bash -s -- --limpar
@@ -71,6 +71,13 @@ nunca alteradas — com **duas exceções**, que vêm **desligadas** e só ligam
 |---|---|
 | `sync_sis_cliente` | grava `caixa_herm` e `porta_splitter` em `sis_cliente` |
 | `sync_cto_nativa` | espelha as CTOs documentadas na tabela nativa `cto` |
+
+### Convive com o HelpFiber, mas não depende dele
+
+Se o servidor tiver o addon **HelpFiber** instalado, o FTTH Doc oferece vincular cada OLT ao
+cadastro que já existe lá, e pode espelhar as CTOs documentadas na tabela `cto` (desligado por
+padrão). Sem o HelpFiber, nada disso aparece e você cadastra as OLTs no próprio addon, na tela
+POP / Data Center.
 
 Toda alteração feita pelo addon fica registrada em `tab_ftth_historico`: quem, quando, o que
 era antes e o que virou.

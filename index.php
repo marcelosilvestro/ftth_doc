@@ -60,7 +60,10 @@ function ftth_resumo(): array
          FROM sis_cliente WHERE cli_ativado = 's'"
     ) ?: [];
     $dados['cadastro'] = array_map('intval', $nativo);
-    $dados['olts'] = (int) Db::valor('SELECT COUNT(*) FROM olt');
+    // `olt` vem do addon HelpFiber. Sem ele, o indicador nao existe — e isso nao e erro.
+    $dados['olts'] = Db::tabelaExiste('olt')
+        ? (int) Db::valor('SELECT COUNT(*) FROM olt')
+        : null;
 
     return $dados;
 }
@@ -219,9 +222,9 @@ include('nav/header.php');
                         <span class="ftth-kpi-rotulo">Com porta</span>
                         <span class="ftth-kpi-valor"><?= ftth_num($resumo['cadastro']['com_porta'] ?? 0) ?></span>
                     </div>
-                    <div class="ftth-kpi">
-                        <span class="ftth-kpi-rotulo">OLTs cadastradas</span>
-                        <span class="ftth-kpi-valor"><?= ftth_num($resumo['olts'] ?? 0) ?></span>
+                    <div class="ftth-kpi" title="Cadastro de OLT do addon HelpFiber; sem ele, as OLTs sao cadastradas aqui mesmo, no POP">
+                        <span class="ftth-kpi-rotulo">OLTs no HelpFiber</span>
+                        <span class="ftth-kpi-valor"><?= isset($resumo['olts']) ? ftth_num($resumo['olts']) : '—' ?></span>
                     </div>
                 </div>
                 <p class="ftth-sub ftth-card-nota">

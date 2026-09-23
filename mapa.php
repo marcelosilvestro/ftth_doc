@@ -237,9 +237,23 @@ include('nav/header.php');
     <?php if ($falha): ?>
         <div class="ftth-aviso ftth-aviso--erro"><?= htmlspecialchars($falha) ?></div>
     <?php elseif ($chave === ''): ?>
-        <div class="ftth-aviso ftth-aviso--erro">
-            Chave do Google Maps não configurada. Cadastre em <code>tab_ftth_config</code>
-            (chave <code>google_maps_key</code>) e restrinja por domínio no console do Google.
+        <!-- Primeiro acesso de qualquer instalação nova cai aqui. É a única tela do addon que
+             não funciona sozinha, então ela explica o caminho inteiro em vez de só reclamar. -->
+        <div class="ftth-aviso ftth-aviso--erro ftth-aviso--passos">
+            <strong>O mapa precisa de uma chave do Google Maps para abrir.</strong>
+            <ol>
+                <li>No <a href="https://console.cloud.google.com/google/maps-apis" target="_blank"
+                          rel="noopener">console do Google Cloud</a>, ative a
+                    <strong>Maps JavaScript API</strong> e gere uma chave.</li>
+                <li>Ainda no console, em <em>Restrições do aplicativo</em>, escolha
+                    <strong>Referenciadores HTTP</strong> e libere o endereço deste painel —
+                    <code><?= htmlspecialchars(($_SERVER['HTTP_HOST'] ?? 'seu-servidor')) ?>/*</code>.
+                    Sem isso o Google recusa a chave e o mapa abre cinza.</li>
+                <li>Cole a chave em <a href="index.php"><strong>Configurações</strong></a> e recarregue
+                    esta página.</li>
+            </ol>
+            <span class="ftth-sub">A chave fica no seu servidor, em <code>tab_ftth_config</code>;
+                o addon não envia nada para fora além das requisições do próprio mapa.</span>
         </div>
     <?php elseif (!$regioes): ?>
         <div class="ftth-aviso">

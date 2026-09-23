@@ -52,6 +52,12 @@
 .ftth-aviso--erro { border-left-color: var(--ftth-vermelho); background: #FEF6F5; }
 .ftth-aviso--ok   { border-left-color: var(--ftth-verde);    background: #F3FBF6; }
 
+/* Aviso que ensina um caminho, em vez de so reclamar: usado quando falta a chave do Maps. */
+.ftth-aviso--passos ol { margin: 8px 0 6px; padding-left: 20px; }
+.ftth-aviso--passos li { margin-bottom: 5px; line-height: 1.45; }
+.ftth-aviso--passos code { background: rgba(0,0,0,.05); padding: 1px 4px; border-radius: 3px; }
+.ftth-aviso--passos .ftth-sub { display: block; margin: 6px 0 0; }
+
 /* ---------------------------------------------------------------- telas de configuracao
    Barra de acoes, cabecalho de card, indicadores em grade (index.php) e formulario em
    linha unica (regioes.php). Densidade antes de tudo: o numero e o assunto, nao a moldura. */

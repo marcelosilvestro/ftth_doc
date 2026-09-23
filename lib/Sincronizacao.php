@@ -125,7 +125,9 @@ final class Sincronizacao
     public static function caixa(int $caixaId, ?Resultado $r = null, string $usuario = 'sistema'): Resultado
     {
         $r = $r ?? Resultado::ok();
-        if (!Config::ligado('sync_cto_nativa')) {
+        // A tabela `cto` e do addon HelpFiber, nao do MK-AUTH: sem ele instalado nao ha espelho
+        // possivel, e insistir so encheria o log de aviso a cada caixa salva.
+        if (!Config::ligado('sync_cto_nativa') || !Db::tabelaExiste('cto')) {
             return $r;
         }
 
@@ -270,6 +272,9 @@ final class Sincronizacao
         $cfg = (string) Config::get('sync_cto_olt_id', '');
         if ($cfg !== '' && ctype_digit($cfg)) {
             return (int) $cfg;
+        }
+        if (!Db::tabelaExiste('olt')) {
+            return null;
         }
         $linhas = Db::todos('SELECT id FROM olt ORDER BY id LIMIT 2');
         return count($linhas) === 1 ? (int) $linhas[0]['id'] : null;

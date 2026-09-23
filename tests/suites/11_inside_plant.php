@@ -199,3 +199,54 @@ if ($hist) {
 }
 
 T::igual('invariantes limpas depois das exclusões', [], Topologia::invariantes($pop));
+
+// ------------------------------------------------------------------ servidor sem HelpFiber
+// As tabelas `olt` e `cto` NAO sao do MK-AUTH: vem do addon HelpFiber. Num MK-AUTH sem ele,
+// consultar essas tabelas derrubava a tela do POP no meio do HTML — e junto ia o JavaScript,
+// deixando os botoes "Nova OLT" e "Novo DIO" mudos. Aconteceu numa instalacao limpa real.
+T::suite('Sem as tabelas do HelpFiber');
+
+Db::pdo()->exec('DROP TABLE IF EXISTS `cto`');
+Db::pdo()->exec('DROP TABLE IF EXISTS `olt`');
+Db::tabelaExiste(Db::ESQUECER);   // as duas ja foram consultadas nas suites anteriores
+
+T::igual('o addon percebe que nao ha cadastro nativo de OLT', false, InsidePlant::temOltNativa());
+T::igual('a lista de OLTs nativas vem vazia, sem excecao', [], InsidePlant::oltsNativas());
+T::igual('buscar uma OLT nativa devolve null', null, InsidePlant::oltNativa(1));
+
+// A tela do POP monta a lista pelo InsidePlant::pop(); e aqui que a pagina morria.
+$semNativa = InsidePlant::pop($pop);
+T::certo('a tela do POP continua montando', is_array($semNativa), json_encode($semNativa));
+
+// Com o espelho de CTO ligado e sem a tabela, salvar uma CTO nao pode falhar nem avisar.
+require_once __DIR__ . '/../../lib/Sincronizacao.php';
+$ctoSem = (int) Caixa::criar($regiao, 'CTO', 'T.POP.CTO.SEMHF', '#00C853', -24.8601, -52.2101, 'teste')->data['id'];
+Config::set('sync_cto_nativa', '1', 'teste');
+$rSem = Sincronizacao::caixa($ctoSem, null, 'teste');
+T::certo('sincronizar CTO vira operacao vazia, sem erro', $rSem->ok, json_encode($rSem->errors));
+T::igual('e sem aviso, porque nao ha o que espelhar', [], $rSem->warnings);
+Config::set('sync_cto_nativa', '0', 'teste');
+
+// Recria para as suites seguintes, que assumem o servidor com HelpFiber.
+Db::pdo()->exec(
+    'CREATE TABLE IF NOT EXISTS `cto` (
+       `id` int(11) NOT NULL AUTO_INCREMENT,
+       `name` varchar(32) DEFAULT NULL,
+       `olt_id` int(11) DEFAULT NULL,
+       `fsp` varchar(10) DEFAULT NULL,
+       `ports` tinyint(4) DEFAULT NULL,
+       `endereco` varchar(255) DEFAULT NULL,
+       `coordenadas` varchar(50) DEFAULT NULL,
+       PRIMARY KEY (`id`)
+     ) ENGINE=InnoDB DEFAULT CHARSET=latin1');
+Db::pdo()->exec(
+    'CREATE TABLE IF NOT EXISTS `olt` (
+       `id` int(11) NOT NULL AUTO_INCREMENT,
+       `maker` varchar(32) NOT NULL DEFAULT "zte",
+       `ipaddress` varchar(20) NOT NULL DEFAULT "",
+       `name` varchar(32) NOT NULL,
+       `access_port` smallint(5) unsigned NOT NULL DEFAULT 23,
+       `password` varchar(128) NOT NULL DEFAULT "",
+       PRIMARY KEY (`id`)
+     ) ENGINE=InnoDB DEFAULT CHARSET=latin1');
+Db::exec('INSERT IGNORE INTO olt (id, name) VALUES (1, "OLT - C320")');

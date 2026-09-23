@@ -230,8 +230,13 @@ var FABRICANTES = <?= json_encode(InsidePlant::FABRICANTES, JSON_UNESCAPED_UNICO
                     </div>
                 </div>
                 <p class="ftth-sub">
-                    Vincular traz host e credencial do cadastro do MK-AUTH, que continuam
-                    somente leitura aqui.
+                    <?php if (InsidePlant::temOltNativa()): ?>
+                        Vincular traz host e credencial do cadastro de OLTs do servidor, que
+                        continuam somente leitura aqui.
+                    <?php else: ?>
+                        Este servidor não tem o cadastro de OLTs do HelpFiber, então não há o que
+                        vincular: preencha os dados da OLT aqui mesmo.
+                    <?php endif; ?>
                 </p>
 
                 <div class="ftth-linha-campos">

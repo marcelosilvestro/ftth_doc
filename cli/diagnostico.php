@@ -79,6 +79,14 @@ if ($cfg === null) {
                 'o banco ainda usa a senha padrao de fabrica — vale trocar');
         }
 
+        // `olt` e `cto` vem do addon HelpFiber, nao do MK-AUTH. Sem elas o ftth_doc roda
+        // inteiro; o que muda e que as OLTs sao cadastradas aqui, e nao importadas de la.
+        require_once $raiz . '/lib/InsidePlant.php';
+        verificar($itens, 'ok', 'integracao com o HelpFiber',
+            InsidePlant::temOltNativa()
+                ? 'cadastro de OLT do HelpFiber disponivel para vinculo'
+                : 'ausente — as OLTs sao cadastradas no proprio addon (normal sem o HelpFiber)');
+
         $schema = new Schema($raiz . '/sql');
         $estado = $schema->estado();
         verificar($itens, $estado['instalado'] ? 'ok' : 'falha', 'tabelas do addon',

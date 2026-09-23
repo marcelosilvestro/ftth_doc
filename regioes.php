@@ -91,15 +91,15 @@ include('nav/header.php');
         <div class="ftth-form-linha">
             <div class="ftth-form-campo">
                 <label for="f-nome">Nome</label>
-                <input id="f-nome" class="ftth-campo" maxlength="80" placeholder="Palmital">
+                <input id="f-nome" class="ftth-campo" maxlength="80">
             </div>
             <div class="ftth-form-campo ftth-form-campo--md">
                 <label for="f-lat">Latitude</label>
-                <input id="f-lat" class="ftth-campo" placeholder="-24.8847">
+                <input id="f-lat" class="ftth-campo">
             </div>
             <div class="ftth-form-campo ftth-form-campo--md">
                 <label for="f-lng">Longitude</label>
-                <input id="f-lng" class="ftth-campo" placeholder="-52.2093">
+                <input id="f-lng" class="ftth-campo">
             </div>
             <div class="ftth-form-campo ftth-form-campo--sm">
                 <label for="f-zoom">Zoom</label>

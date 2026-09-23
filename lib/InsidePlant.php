@@ -82,14 +82,31 @@ final class InsidePlant
         return $lista;
     }
 
+    /**
+     * A tabela `olt` NAO e do MK-AUTH: ela vem do addon HelpFiber. Num servidor sem ele, o
+     * ftth_doc continua inteiro — so nao oferece o vinculo com a OLT ja cadastrada, e o
+     * provedor digita os dados da OLT aqui mesmo. Antes desta checagem, a tela do POP morria
+     * com "Table 'mkradius.olt' doesn't exist" no meio do HTML, levando junto o JavaScript.
+     */
+    public static function temOltNativa(): bool
+    {
+        return Db::tabelaExiste('olt');
+    }
+
     /** A nativa é só leitura — e a senha de acesso dela nunca sai daqui. */
     public static function oltNativa(int $id): ?array
     {
+        if (!self::temOltNativa()) {
+            return null;
+        }
         return Db::um('SELECT id, name, maker, ipaddress, access_port FROM olt WHERE id = ?', [$id]);
     }
 
     public static function oltsNativas(): array
     {
+        if (!self::temOltNativa()) {
+            return [];
+        }
         return Db::todos('SELECT id, name, maker, ipaddress FROM olt ORDER BY name');
     }
 
