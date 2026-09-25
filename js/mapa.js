@@ -121,8 +121,14 @@
         return camadas.OUTRAS;
     }
 
-    function carregar() {
+    /**
+     * Pede o que está na área visível. `soArea` vem do arrasto/zoom do mapa: aí nada na
+     * rede mudou. Sem ele a chamada vem de uma alteração (criar, mover, excluir), e a lista
+     * de pontos do painel também fica velha.
+     */
+    function carregar(soArea) {
         if (!mapa || !regiao) return;
+        if (!soArea) recarregarPontos();
         var b = mapa.getBounds();
         if (!b) return;
         var ne = b.getNorthEast(), sw = b.getSouthWest();
@@ -143,6 +149,8 @@
 
     function desenhar(d) {
         limpar();
+        // Filtro da aba Pontos: o que não atende fica translúcido — some do foco, não do mapa.
+        var destaque = idsDoFiltro();
         ultimoDesenho = d;   // o modo Mover precisa saber que cabos tocam cada caixa
 
         d.caixas.forEach(function (c) {
@@ -163,6 +171,7 @@
                 // vez do marcador: o técnico arrastava a ponta do cabo achando que estava
                 // arrastando a caixa.
                 zIndex: pend ? Z_CAIXA_ARRASTANDO : Z_CAIXA,
+                opacity: destaque && !destaque[c.id] ? 0.3 : 1,
                 label: mapa.getZoom() >= ((window.FTTH_MAPA || {}).rotulo_zoom || 17)
                     ? { text: c.nome, fontSize: '11px', color: '#22303F', className: 'ftth-rotulo' }
                     : null
@@ -170,6 +179,11 @@
             m.addListener('click', function () {
                 // No modo Cabo, clicar numa caixa ancora o traçado nela em vez de abrir a ficha.
                 if (modo === 'cabo') {
+                    // Reserva não é ponta de cabo: ela nasce no meio de um cabo já lançado.
+                    if (c.tipo === 'RESERVA') {
+                        FTTH.toast('erro', 'Reserva não recebe cabo: ela fica no meio de um cabo já lançado.');
+                        return;
+                    }
                     pontoTracado({ tipo: 'CAIXA', id: parseInt(c.id, 10), nome: c.nome,
                                    lat: parseFloat(c.lat), lng: parseFloat(c.lng) });
                     return;
@@ -182,7 +196,7 @@
                 // faz isso é o Caixa::mover, na hora do Concluir.
                 m.addListener('drag', function (ev) {
                     pendentes.caixas[c.id] = { lat: ev.latLng.lat(), lng: ev.latLng.lng(),
-                                               nome: c.nome };
+                                               nome: c.nome, tipo: c.tipo };
                     arrastarPontasNaTela(c.id);
                 });
                 m.addListener('dragend', function () {
@@ -202,10 +216,10 @@
             // Google: arrastar uma delas cria vértice. Dizer isso evita que elas sejam lidas
             // como "vértices que apareceram sozinhos" depois de mexer no cabo.
             $('#mover-dica').text(editaveis
-                ? 'Arraste caixas e vértices. Os pontos claros no meio do trecho criam vértice. '
+                ? 'Arraste pontos e vértices. As alças claras no meio do trecho criam vértice. '
                   + 'Botão direito: na linha insere, no vértice remove.'
                 : d.vaos.length + ' cabos na tela: aproxime para editar os traçados. '
-                  + 'As caixas continuam arrastáveis.');
+                  + 'Os pontos continuam arrastáveis.');
         }
 
         if (camadas.CABOS) {
@@ -221,7 +235,7 @@
                     path: caminho, map: mapa,
                     strokeColor: v.cor_rota || '#00E676',
                     strokeWeight: (window.FTTH_MAPA || {}).cabo_espessura || 5,
-                    strokeOpacity: 0.95,
+                    strokeOpacity: destaque ? 0.35 : 0.95,
                     cursor: cursorDoCabo(),
                     zIndex: Z_CABO
                 });
@@ -280,8 +294,11 @@
                  + '<b>' + valor + '</b>' + rotulo + '</span>';
         };
         $('#resumo-mapa').html(
-            item(d.caixas.length, 'caixas')
+            item(d.caixas.length, 'pontos')
             + item(d.vaos.length, 'vãos')
+            // Filtro ligado: quantos dos pontos na tela ele destaca — o lembrete de que há filtro.
+            + (destaque ? item(d.caixas.filter(function (x) { return destaque[x.id]; }).length,
+                               ROTULO_FILTRO[filtroPontos], ' ftth-resumo-item--pend') : '')
             + (c.pendentes ? item(c.pendentes, 'a revisar', ' ftth-resumo-item--pend') : '')
             + (d.truncado
                 ? '<span class="ftth-resumo-item ftth-resumo-item--aviso">'
@@ -306,6 +323,10 @@
         FTTH.chamar({
             url: 'mapa.php?ajax=ficha&id=' + id,
             onOk: function (c) {
+                if (c.tipo === 'RESERVA') {
+                    painel(fichaReserva(c));
+                    return;
+                }
                 var ocupadas = c.clientes.length;
                 var portas = 0;
                 c.splitters.forEach(function (s) { if (s.funcao === 'ATENDIMENTO') portas += parseInt(s.saidas, 10); });
@@ -419,6 +440,45 @@
     }
 
     /**
+     * Ficha da Reserva: é cabo enrolado, não caixa. Sem diagrama, clientes nem sinal — só
+     * os metros, o cabo em que ela está e quanto esse vão soma de reserva no total.
+     */
+    function fichaReserva(c) {
+        var v = c.vao_reserva;
+        var quem = c.alterado_por || c.criado_por || '—';
+        var quando = c.alterado_em || c.criado_em || '';
+
+        return '<div class="ftth-ficha-topo">'
+          +   '<h3 class="ftth-painel-titulo">' + marcaDoTipo(c.tipo, c.cor) + ' ' + esc(c.nome) + '</h3>'
+          +   '<p class="ftth-sub">Reserva técnica · ' + esc(c.regiao)
+          +     (v ? '' : ' <span class="ftth-selo ftth-selo--pend">sem cabo</span>') + '</p>'
+          + '</div>'
+          + '<dl class="ftth-ficha">'
+          +   linha('Metros de reserva', c.reserva_m ? metros(c.reserva_m) : '—')
+          +   linha('Cabo', v ? esc((v.cabo || 'sem nome') + ' · ' + v.tipo) : '—')
+          +   linha('Trecho', v ? esc(v.caixa_ini + ' → ' + v.caixa_fim) : '—')
+          +   linha('Reserva no trecho', v ? metros(v.reserva_m) : '—')
+          +   linha('Comprimento óptico', v ? metros(v.comprimento_optico) : '—')
+          +   linha('Origem', c.origem === 'kmz' ? 'importada do KMZ' : 'cadastro manual')
+          + '</dl>'
+          + '<p class="ftth-ficha-autor">Por ' + esc(quem) + (quando ? ' · ' + esc(quando) : '') + '</p>'
+          + (v ? '' : '<div class="ftth-aviso">Esta reserva não está em nenhum cabo e não soma metros. '
+                    + 'Edite e informe os metros: ela passa a ser do cabo que está sob o ponto.</div>')
+          + '<div class="ftth-ficha-acoes">'
+          +   '<button class="ftth-acao" id="fc-centralizar" data-lat="' + c.lat + '" data-lng="' + c.lng + '">'
+          +     '<i class="bi-geo-fill"></i> Ver no mapa</button>'
+          +   '<button class="ftth-acao" id="fc-editar" data-id="' + c.id + '">'
+          +     '<i class="bi-pencil-square"></i> Editar</button>'
+          +   '<button class="ftth-acao ftth-acao--perigo" id="fc-excluir" data-id="' + c.id + '"'
+          +     ' data-versao="' + c.versao + '" data-nome="' + esc(c.nome) + '">'
+          +     '<i class="bi-trash3-fill"></i> Excluir</button>'
+          + '</div>'
+          + '<p class="ftth-sub ftth-coord">Localização: <span class="mono" id="fc-coord">'
+          +   parseFloat(c.lat).toFixed(6) + ', ' + parseFloat(c.lng).toFixed(6) + '</span> '
+          +   '<button class="ftth-copiar" id="fc-copiar" title="Copiar">copiar</button></p>';
+    }
+
+    /**
      * A marca do tipo, para títulos em HTML: a silhueta quando o tipo tem uma, senão o
      * ícone do painel. Mesma fonte do marcador do mapa — o desenho vive no PHP.
      */
@@ -475,14 +535,14 @@
                     unirEExcluir(id, versao, nome, e);
                     return;
                 }
-                if (!confirm('Excluir a caixa "' + nome + '"?\n\nEla sai do mapa, mas continua no histórico.')) {
+                if (!confirm('Excluir "' + nome + '"?\n\nSai do mapa, mas continua no histórico.')) {
                     return;
                 }
                 excluirCaixaMesmo(id, versao);
             },
             // Se a consulta falhar, segue o caminho normal: o servidor recusa se não puder.
             onErro: function () {
-                if (!confirm('Excluir a caixa "' + nome + '"?\n\nEla sai do mapa, mas continua no histórico.')) {
+                if (!confirm('Excluir "' + nome + '"?\n\nSai do mapa, mas continua no histórico.')) {
                     return;
                 }
                 excluirCaixaMesmo(id, versao);
@@ -564,6 +624,9 @@
           +     linha('Construção do tubo', esc(v.construcao || '—'))
           +     linha('Padrão de cores', esc(v.padrao_cores))
           +     linha('Comprimento do vão', metros(v.comprimento_geo))
+          +     linha('Reserva técnica', parseFloat(v.reserva_m) > 0
+                      ? metros(v.reserva_m) + ' (' + v.reservas + ' reserva' + (v.reservas == 1 ? '' : 's') + ')'
+                      : '—')
           +     linha('Comprimento óptico', metros(v.comprimento_optico))
           +     linha('Caixa de início', esc(v.caixa_ini))
           +     linha('Caixa final', esc(v.caixa_fim))
@@ -1033,6 +1096,23 @@
         limparTracado();
         $('#cabo-card').show();
         atualizarTracado();
+        ajustarToasts();
+    }
+
+    /**
+     * Em tela estreita os cards de Cabo e Mover ficam na base do mapa, justamente onde o toast
+     * nasce. Enquanto um deles estiver aberto, o toast sobe e aparece logo acima do card.
+     */
+    function ajustarToasts() {
+        var raiz = document.documentElement;
+        var estreita = window.matchMedia && window.matchMedia('(max-width: 470px)').matches;
+        var card = $('#cabo-card:visible, #mover-card:visible, #regiao-card:visible').get(0);
+        if (estreita && card) {
+            var topo = card.getBoundingClientRect().top;
+            raiz.style.setProperty('--ftth-toast-base', Math.max(20, window.innerHeight - topo + 8) + 'px');
+        } else {
+            raiz.style.removeProperty('--ftth-toast-base');
+        }
     }
 
     function limparTracado() {
@@ -1041,6 +1121,7 @@
         pinosTracado.forEach(function (p) { p.setMap(null); });
         pinosTracado = [];
         $('#cabo-card').hide();
+        ajustarToasts();
     }
 
     function pontoTracado(p) {
@@ -1088,6 +1169,7 @@
             + ' · ' + caixas + ' caixa' + (caixas === 1 ? '' : 's'));
 
         var ultimo = tracado[tracado.length - 1];
+        atualizarFinalizar();
         $('#cabo-dica').text(!tracado.length
             ? 'Clique na caixa onde o cabo começa.'
             : (ultimo.tipo === 'CAIXA'
@@ -1100,29 +1182,60 @@
     }
 
     function finalizarTracado() {
-        if (tracado.length < 2 || tracado[tracado.length - 1].tipo !== 'CAIXA') {
-            FTTH.toast('erro', 'O cabo precisa terminar em uma caixa.');
+        if (!podeFinalizarCabo()) {
+            FTTH.toast('erro', 'O cabo precisa estar ancorado em duas caixas e terminar numa delas.');
             return;
         }
-        var caixas = tracado.filter(function (p) { return p.tipo === 'CAIXA'; });
-        var metros = 0;
-        for (var i = 1; i < tracado.length; i++) {
-            metros += google.maps.geometry && google.maps.geometry.spherical
-                ? google.maps.geometry.spherical.computeDistanceBetween(
-                      new google.maps.LatLng(tracado[i - 1].lat, tracado[i - 1].lng),
-                      new google.maps.LatLng(tracado[i].lat, tracado[i].lng))
-                : 0;
-        }
-        $('#cabo-resumo').text(caixas.length + ' caixas · ' + (caixas.length - 1) + ' vão(s) · '
-            + tracado.length + ' pontos'
-            + (metros ? ' · ' + Math.round(metros) + ' m aproximados' : ''));
+        // A configuração já veio antes do desenho: finalizar é gravar.
+        salvarCabo();
+    }
+
+    /**
+     * Finalizar só acende com o cabo ancorado em duas caixas e terminando numa delas — o
+     * mesmo que o servidor exige. Botão apagado diz a regra antes do erro, não depois.
+     */
+    function podeFinalizarCabo() {
+        var caixas = tracado.filter(function (p) { return p.tipo === 'CAIXA'; }).length;
+        return caixas >= 2 && tracado[tracado.length - 1].tipo === 'CAIXA';
+    }
+
+    function atualizarFinalizar() {
+        $('#cabo-finalizar').prop('disabled', !podeFinalizarCabo())
+            .attr('title', podeFinalizarCabo() ? '' : 'O cabo precisa estar ancorado em duas caixas');
+    }
+
+    function desenhandoCabo() { return $('#cabo-card').is(':visible'); }
+
+    /**
+     * Passo 1 do modo Cabo: o popup. Na entrada ele pede para desenhar; reaberto pelo ⚙ do
+     * card, só volta para o traçado — e a cor trocada ali já pinta o que está desenhado.
+     */
+    function abrirConfigCabo() {
+        var desenhando = desenhandoCabo();
+        $('#cabo-modal-titulo').text(desenhando ? 'Configuração do cabo' : 'Novo cabo');
+        $('#cb-salvar').text(desenhando ? 'Continuar desenhando' : 'Desenhar');
+        var caixas = tracado.filter(function (p) { return p.tipo === 'CAIXA'; }).length;
+        $('#cabo-resumo').text(desenhando
+            ? tracado.length + ' ponto(s) marcados · ' + caixas + ' caixa(s). O traçado continua na tela.'
+            : 'Configure e desenhe: o traçado começa numa caixa e termina em outra.');
         $('#cb-saida').empty();
         $('#modal-cabo').show();
+        setTimeout(function () { $('#cb-nome').trigger('focus'); }, 50);
+    }
+
+    function confirmarConfigCabo() {
+        $('#modal-cabo').hide();
+        if (desenhandoCabo()) {
+            atualizarTracado();                  // a cor pode ter mudado
+            return;
+        }
+        iniciarTracado();
+        FTTH.toast('info', 'Clique na caixa onde o cabo começa.');
     }
 
     function salvarCabo() {
         var cfg = window.FTTH_MAPA || {};
-        $('#cb-salvar').prop('disabled', true);
+        $('#cabo-finalizar').prop('disabled', true);
         FTTH.chamar({
             url: 'mapa.php?ajax=novo_cabo',
             method: 'POST',
@@ -1138,7 +1251,6 @@
                 }))
             },
             onOk: function (d) {
-                $('#modal-cabo').hide();
                 limparTracado();
                 $('#cb-nome').val(''); $('#cb-fabricante').val('');
                 // Gravou: o desenho acabou e o mapa volta para o modo Navegar. Antes o modo
@@ -1152,10 +1264,9 @@
                 FTTH.toast('ok', d.tipo + ' criado: ' + d.vaos.length + ' vão(s), '
                     + Math.round(d.metros) + ' m.');
             },
-            onErro: function (m) {
-                $('#cb-saida').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
-            }
-        }).always(function () { $('#cb-salvar').prop('disabled', false); });
+            // O traçado continua na tela: o usuário corrige (⚙ ou Desfazer) e finaliza de novo.
+            onErro: function (m) { FTTH.toast('erro', m); }
+        }).always(atualizarFinalizar);
     }
 
     /* ------------------------------------------------------------------ nova caixa */
@@ -1188,13 +1299,13 @@
         }
 
         if (novo === 'caixa') {
-            FTTH.toast('info', 'Clique no mapa para marcar o ponto da caixa.');
+            FTTH.toast('info', 'Clique no mapa para marcar o ponto.');
         } else if (novo === 'cabo') {
-            FTTH.toast('info', 'Clique na caixa onde o cabo começa.');
-            iniciarTracado();
+            abrirConfigCabo();          // configura primeiro; o traçado começa no "Desenhar"
         } else if (novo === 'mover') {
-            FTTH.toast('info', 'Arraste caixas. Clique num cabo para soltar os vértices.');
+            FTTH.toast('info', 'Arraste pontos. Clique num cabo para soltar os vértices.');
             $('#mover-card').show();
+            ajustarToasts();
             atualizarContaMover();
             carregar();                 // redesenha com os marcadores arrastáveis
         } else {
@@ -1236,6 +1347,7 @@
     function sairDoModoMover() {
         pendentes = { caixas: {}, vaos: {} };
         $('#mover-card').hide();
+        ajustarToasts();
         carregar();                     // volta o que está no banco
     }
 
@@ -1326,7 +1438,7 @@
         // A ponta pertence à caixa: arrastá-la descolaria o cabo. O Google não deixa travar um
         // vértice só, então ela volta sozinha para cima da caixa.
         caminho.addListener('set_at', function (i) {
-            if (ajustando) return;
+            if (ajustando || linha.ftthColando) return;
             var ultimo = caminho.getLength() - 1;
             if (i === 0 || i === ultimo) {
                 colarPontasDepois();
@@ -1392,7 +1504,22 @@
             }
             var pts = pontosDoVao(v).map(function (p) { return { lat: p[0], lng: p[1] }; });
             linhas.forEach(function (l) {
-                if (l.ftthVaoId === v.id) l.setPath(pts);
+                if (l.ftthVaoId !== v.id) return;
+                // setPath troca o MVCArray inteiro, e os listeners do tornarEditavel ficavam
+                // presos ao array velho: o cabo arrastado depois disso não gravava pendência
+                // e voltava para o lugar antigo no Concluir. Por isso, na linha editável, só
+                // as pontas mudam, no mesmo array.
+                var caminho = l.getPath();
+                var ultimo = caminho.getLength() - 1;
+                if (!l.getEditable() || ultimo < 1) {
+                    l.setPath(pts);
+                    return;
+                }
+                l.ftthColando = true;    // não é o usuário puxando a ponta: sem aviso
+                caminho.setAt(0, new google.maps.LatLng(pts[0].lat, pts[0].lng));
+                caminho.setAt(ultimo, new google.maps.LatLng(pts[pts.length - 1].lat,
+                                                             pts[pts.length - 1].lng));
+                l.ftthColando = false;
             });
         });
     }
@@ -1410,6 +1537,11 @@
         Object.keys(pendentes.caixas).forEach(function (id) {
             nomesMovidos[id] = pendentes.caixas[id].nome;
         });
+        // Reserva arrastada não é candidata a emenda: o servidor a cola no cabo sozinho.
+        var reservas = {};
+        Object.keys(pendentes.caixas).forEach(function (id) {
+            if (pendentes.caixas[id].tipo === 'RESERVA') reservas[id] = true;
+        });
         if (!caixas.length && !vaos.length) return;
 
         var $b = $('#mover-concluir').prop('disabled', true);
@@ -1419,7 +1551,7 @@
             data: { csrf: cfg.csrf, caixas: JSON.stringify(caixas), vaos: JSON.stringify(vaos) },
             onOk: function (d) {
                 // Guarda antes de limpar: a oferta de emenda precisa saber onde cada caixa parou.
-                var movidas = caixas.map(function (c) {
+                var movidas = caixas.filter(function (c) { return !reservas[c.id]; }).map(function (c) {
                     return { id: c.id, nome: nomesMovidos[c.id] || 'A caixa',
                              lat: c.lat, lng: c.lng };
                 });
@@ -1473,6 +1605,11 @@
         $('#nc-ponto').text('Ponto: ' + latLng.lat().toFixed(6) + ', ' + latLng.lng().toFixed(6));
         // Clicou em cima de um cabo? A pergunta vem agora, antes do cadastro: a decisão é
         // sobre o ponto, e escolher o tipo da caixa depois é o passo natural.
+        // Reserva não emenda: se o tipo já está escolhido, a pergunta nem aparece.
+        if (tipoSelecionado() === 'RESERVA') {
+            abrirModalCaixa();
+            return;
+        }
         perguntarEmendaNoClique(latLng, abrirModalCaixa);
     }
 
@@ -1496,13 +1633,26 @@
         });
     }
 
+    /** Nome do tipo para os textos da tela: "Editar CTO", "Reserva criada". */
+    var ROTULO_TIPO = { CTO: 'CTO', CEO: 'CEO', DC: 'DC / POP', PREDIO: 'prédio',
+                        PROBLEMA: 'problema', RESERVA: 'reserva' };
+
+    var TIPOS_EM_SEQUENCIA = { CTO: true, CEO: true, RESERVA: true };
+
+    /** Os metros só existem para a Reserva; o resto do modal é igual para todo tipo. */
+    function camposDoTipo() {
+        $('#nc-reserva-area').toggle(tipoSelecionado() === 'RESERVA');
+        // Numerar em sequência só vale no cadastro e para o que se lança em série na rua.
+        $('#nc-sequencia-area').toggle(!editando && TIPOS_EM_SEQUENCIA[tipoSelecionado()] === true);
+    }
+
     function abrirModalCaixa() {
         editando = null;
-        $('#modal-titulo').text('Nova caixa');
-        $('#nc-criar').text('Criar caixa');
-        $('#nc-sequencia-area').show();
-        $('#nc-capacidade').val('');
+        $('#modal-titulo').text('Novo ponto');
+        $('#nc-criar').text('Criar ponto');
+        $('#nc-reserva').val('');
         $('#nc-saida').empty();
+        camposDoTipo();
         $('#modal-caixa').show();
         sugerirNome('');
         setTimeout(function () { $('#nc-nome').trigger('focus').trigger('select'); }, 50);
@@ -1513,19 +1663,19 @@
         editando = { id: parseInt(c.id, 10), versao: parseInt(c.versao, 10) };
         limparPin();
 
-        $('#modal-titulo').text('Editar caixa');
+        $('#modal-titulo').text('Editar ' + (ROTULO_TIPO[c.tipo] || 'ponto'));
         $('#nc-criar').text('Salvar');
-        $('#nc-sequencia-area').hide();
         $('#nc-saida').empty();
 
         $('#nc-nome').val(c.nome);
-        $('#nc-capacidade').val(c.capacidade || '');
+        $('#nc-reserva').val(c.reserva_m ? String(parseFloat(c.reserva_m)) : '');
         $('#nc-ponto').text('Ponto: ' + parseFloat(c.lat).toFixed(6) + ', ' + parseFloat(c.lng).toFixed(6)
             + ' — para mudar de lugar, use o modo Mover.');
 
         $('.ftth-tipo').removeClass('ativo');
         var $t = $('.ftth-tipo[data-tipo="' + c.tipo + '"]');
         ($t.length ? $t : $('.ftth-tipo[data-tipo="CTO"]')).addClass('ativo');
+        camposDoTipo();
 
         corEscolhida = c.cor;
         $('.ftth-cor').removeClass('ativo');
@@ -1547,7 +1697,7 @@
         var cfg = window.FTTH_MAPA || {};
         var nome = $.trim($('#nc-nome').val());
         if (!nome) {
-            $('#nc-saida').html('<div class="ftth-aviso ftth-aviso--erro">Informe o nome da caixa.</div>');
+            $('#nc-saida').html('<div class="ftth-aviso ftth-aviso--erro">Informe o nome do ponto.</div>');
             return;
         }
 
@@ -1559,7 +1709,7 @@
                 data: {
                     csrf: cfg.csrf, id: editando.id, versao: editando.versao,
                     nome: nome, tipo: tipoSelecionado(), cor: corSelecionada(),
-                    capacidade: $('#nc-capacidade').val()
+                    reserva_m: $('#nc-reserva').val()
                 },
                 onOk: function (d) {
                     var id = editando.id;
@@ -1579,7 +1729,7 @@
             $('#nc-saida').html('<div class="ftth-aviso ftth-aviso--erro">Marque o ponto no mapa.</div>');
             return;
         }
-        var sequencia = $('#nc-sequencia').is(':checked');
+        var sequencia = $('#nc-sequencia-area').is(':visible') && $('#nc-sequencia').is(':checked');
 
         $('#nc-criar').prop('disabled', true);
         FTTH.chamar({
@@ -1588,7 +1738,7 @@
             data: {
                 csrf: cfg.csrf, regiao: regiao,
                 nome: nome, tipo: tipoSelecionado(), cor: corSelecionada(),
-                capacidade: $('#nc-capacidade').val(),
+                reserva_m: $('#nc-reserva').val(),
                 lat: pontoNovo.lat(), lng: pontoNovo.lng()
             },
             onOk: function (d) {
@@ -1599,7 +1749,7 @@
                 var seguir = function () {
                     if (sequencia) {
                         // Continua no modo Caixa: o próximo clique já marca a caixa seguinte.
-                        FTTH.toast('ok', nome + ' criada. Clique no mapa para a próxima.');
+                        FTTH.toast('ok', nome + ' criado. Clique no mapa para o próximo.');
                     } else {
                         definirModo('navegar');
                         abrirFicha(d.id);
@@ -1607,6 +1757,8 @@
                 };
 
                 // A emenda já foi decidida no clique; agora que a caixa existe, aplicamos.
+                // Reserva nunca emenda: ela fica em cima do cabo, que continua inteiro.
+                if (d.tipo === 'RESERVA') emendaDesejada = null;
                 if (emendaDesejada) {
                     var vao = emendaDesejada.vao;
                     emendaDesejada = null;
@@ -1621,12 +1773,673 @@
         }).always(function () { $('#nc-criar').prop('disabled', false); });
     }
 
+    /* ------------------------------------------------------------------ vista salva */
+
+    /**
+     * Onde o mapa estava (região, centro e zoom), guardado na aba do navegador. Quem abre o
+     * diagrama de uma caixa e volta quer continuar no mesmo ponto, não no centro da região.
+     * sessionStorage e não localStorage: aba nova começa do padrão da região.
+     */
+    var CHAVE_VISTA = 'ftth_mapa_vista';
+
+    function lerVista() {
+        try {
+            var v = JSON.parse(sessionStorage.getItem(CHAVE_VISTA) || 'null');
+            return (v && isFinite(v.lat) && isFinite(v.lng) && isFinite(v.zoom)) ? v : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function guardarVista() {
+        var c = mapa && mapa.getCenter();
+        if (!c) return;
+        try {
+            sessionStorage.setItem(CHAVE_VISTA, JSON.stringify({
+                regiao: regiao, lat: c.lat(), lng: c.lng(), zoom: mapa.getZoom()
+            }));
+        } catch (e) { /* navegador sem storage: só não lembra */ }
+    }
+
+    /* ------------------------------------------------------------------ regiões e painel */
+
+    /**
+     * Onde o mapa vai ao entrar numa região, em ordem de prioridade (a 1ª, a vista guardada
+     * na aba, é resolvida na abertura da página):
+     *   2. a moldura dos pontos — um centro gravado errado deixa de importar no 1º ponto;
+     *   3. o centro e o zoom gravados na região, que só valem para região vazia;
+     *   4. o centro do Brasil, quando nada acima existe.
+     */
+    var CENTRO_BRASIL = { lat: -14.235, lng: -51.9253 };
+    var ZOOM_BRASIL = 4;
+    var ZOOM_MAX_ENQUADRAR = 18;   // rede de um ponto só não pode abrir no zoom 21
+    var regioes = [];
+
+    function acharRegiao(id) {
+        var achada = null;
+        regioes.forEach(function (r) { if (Number(r.id) === Number(id)) achada = r; });
+        return achada;
+    }
+
+    function telaEstreita() {
+        return !!(window.matchMedia && window.matchMedia('(max-width: 470px)').matches);
+    }
+
+    function posicionarNaRegiao(r) {
+        if (!mapa) return;
+        if (r && r.lat_min !== null && r.lat_min !== undefined) {
+            var la1 = parseFloat(r.lat_min), la2 = parseFloat(r.lat_max);
+            var ln1 = parseFloat(r.lng_min), ln2 = parseFloat(r.lng_max);
+            if (Math.abs(la2 - la1) < 1e-5 && Math.abs(ln2 - ln1) < 1e-5) {
+                mapa.setCenter({ lat: la1, lng: ln1 });
+                mapa.setZoom(ZOOM_MAX_ENQUADRAR);
+                return;
+            }
+            // Com o painel aberto no desktop, ele cobre 300px da esquerda: a rede é
+            // enquadrada no que sobra à vista, não atrás dele.
+            var coberto = $('#mapa-area').hasClass('gaveta-aberta') && !telaEstreita();
+            mapa.fitBounds(new google.maps.LatLngBounds({ lat: la1, lng: ln1 }, { lat: la2, lng: ln2 }),
+                coberto ? { top: 40, right: 40, bottom: 40, left: 340 } : 40);
+            google.maps.event.addListenerOnce(mapa, 'idle', function () {
+                if (mapa.getZoom() > ZOOM_MAX_ENQUADRAR) mapa.setZoom(ZOOM_MAX_ENQUADRAR);
+            });
+        } else if (r && r.lat !== null && r.lat !== undefined && r.lng !== null) {
+            mapa.setCenter({ lat: parseFloat(r.lat), lng: parseFloat(r.lng) });
+            mapa.setZoom(parseInt(r.zoom, 10) || 15);
+        } else {
+            mapa.setCenter(CENTRO_BRASIL);
+            mapa.setZoom(ZOOM_BRASIL);
+        }
+    }
+
+    function trocarRegiao(id) {
+        if (modo !== 'navegar') {
+            definirModo('navegar');
+            if (modo !== 'navegar') return;     // desistiu de sair do Mover com pendências
+        }
+        regiao = parseInt(id, 10) || 0;
+        pontos = [];
+        pontosCarregados = false;
+        $('#painel').hide();
+        renderRegioes();
+        // Escolheu a região: o painel sai da frente ANTES de enquadrar, para a rede ocupar
+        // o mapa inteiro em vez de ser enquadrada no que sobra ao lado dele.
+        abrirGaveta(false);
+        posicionarNaRegiao(acharRegiao(regiao));
+        carregar();
+    }
+
+    function plural(n, um, varios) { return n + ' ' + (n === 1 ? um : varios); }
+
+    function renderRegioes() {
+        var $l = $('#lista-regioes');
+        if (!regioes.length) {
+            $l.html('<p class="ftth-gaveta-vazio">Nenhuma região ainda. Crie a primeira: dê um nome '
+                + 'e posicione o mapa onde ela fica.</p>');
+            return;
+        }
+        $l.html(regioes.map(function (r) {
+            var n = parseInt(r.caixas, 10) || 0;
+            var v = parseInt(r.vaos, 10) || 0;
+            var q = parseInt(r.quarentena, 10) || 0;
+            return '<div class="ftth-regiao' + (Number(r.id) === Number(regiao) ? ' ativa' : '')
+                 +      '" data-id="' + r.id + '">'
+                 +   '<div class="ftth-regiao-topo">'
+                 +     '<div class="ftth-regiao-nome"><strong>' + esc(r.nome) + '</strong>'
+                 +       '<span>' + plural(n, 'ponto', 'pontos') + ' · ' + plural(v, 'vão', 'vãos')
+                 +       (q ? ' · ' + q + ' a revisar' : '') + '</span></div>'
+                 +     '<button type="button" class="ftth-regiao-mais" title="Opções">'
+                 +       '<i class="bi-three-dots-vertical"></i></button>'
+                 +   '</div>'
+                 +   '<div class="ftth-regiao-menu">'
+                 +     '<button type="button" data-acao="renomear"><i class="bi-pencil-square"></i> Renomear</button>'
+                 +     '<button type="button" data-acao="vista"><i class="bi-crosshair"></i> Usar esta vista como centro</button>'
+                 +     '<button type="button" data-acao="excluir" class="perigo">'
+                 +       '<i class="bi-trash3-fill"></i> Excluir</button>'
+                 +   '</div>'
+                 + '</div>';
+        }).join(''));
+    }
+
+    function recarregarRegioes(depois) {
+        FTTH.chamar({
+            url: 'mapa.php?ajax=regioes',
+            onOk: function (d) {
+                regioes = d.regioes || [];
+                renderRegioes();
+                if (depois) depois();
+            },
+            onErro: function (m) { FTTH.toast('erro', m); }
+        });
+    }
+
+    /* ------------------------------------------------------------------ aba Pontos */
+
+    /**
+     * Lista da região inteira, com o filtro que também vale no mapa. Só é buscada quando
+     * alguém vai olhar (aba aberta ou filtro ligado): o cálculo de sinal roda a rede toda.
+     */
+    var pontos = [];
+    var pontosCarregados = false;
+    var filtroPontos = 'todos';           // todos | sem_sinal | sem_splitter
+    var gruposFechados = {};
+    var ORDEM_GRUPO = ['CTO', 'CEO', 'DC', 'PREDIO', 'RESERVA', 'PROBLEMA'];
+    var ROTULO_GRUPO = { CTO: 'CTO', CEO: 'CEO', DC: 'DC / POP', PREDIO: 'Prédio',
+                         RESERVA: 'Reserva', PROBLEMA: 'Problema' };
+    var ROTULO_FILTRO = { sem_sinal: 'sem sinal', sem_splitter: 'sem splitter' };
+
+    /** Os dois filtros olham só CTO e CEO — e é o servidor quem diz quem é (com_sinal != null). */
+    function atendeFiltro(p, f) {
+        if (f === 'todos') return true;
+        if (p.com_sinal === null || p.com_sinal === undefined) return false;
+        if (f === 'sem_sinal') return !p.com_sinal;
+        if (f === 'sem_splitter') return (parseInt(p.splitters, 10) || 0) === 0;
+        return true;
+    }
+
+    /** Ids que o filtro destaca no mapa, ou null quando não há filtro (nada fica translúcido). */
+    function idsDoFiltro() {
+        if (filtroPontos === 'todos' || !pontosCarregados) return null;
+        var ids = {};
+        pontos.forEach(function (p) { if (atendeFiltro(p, filtroPontos)) ids[p.id] = true; });
+        return ids;
+    }
+
+    function abaPontosVisivel() {
+        return $('#mapa-area').hasClass('gaveta-aberta')
+            && $('.ftth-gaveta-tab.ativo').data('aba') === 'pontos';
+    }
+
+    function recarregarPontos() {
+        if (!regiao) {
+            pontos = [];
+            pontosCarregados = false;
+            renderPontos();
+            return;
+        }
+        // Ninguém olhando: só marca como velha, e ela é buscada quando a aba abrir.
+        if (filtroPontos === 'todos' && !abaPontosVisivel()) {
+            pontosCarregados = false;
+            return;
+        }
+        var pedida = regiao;
+        FTTH.chamar({
+            url: 'mapa.php?ajax=pontos&regiao=' + regiao,
+            onOk: function (d) {
+                if (pedida !== regiao) return;       // trocou de região no meio do caminho
+                pontos = d.pontos || [];
+                pontosCarregados = true;
+                renderPontos();
+                if (filtroPontos !== 'todos' && ultimoDesenho) desenhar(ultimoDesenho);
+            },
+            onErro: function (m) {
+                $('#lista-pontos').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
+            }
+        });
+    }
+
+    function linhaDoPonto(p) {
+        if (p.tipo === 'RESERVA') {
+            return '<small>' + (parseFloat(p.reserva_m) > 0 ? metros(p.reserva_m) + ' de reserva'
+                                                            : 'sem metros informados') + '</small>';
+        }
+        if (p.com_sinal === null || p.com_sinal === undefined) {
+            return '<small>' + esc(ROTULO_GRUPO[p.tipo] || p.tipo) + '</small>';
+        }
+        var partes = [];
+        var alerta = false;
+        if (p.com_sinal) {
+            partes.push('com sinal');
+        } else {
+            partes.push('sem sinal');
+            alerta = true;
+        }
+        var sp = parseInt(p.splitters, 10) || 0;
+        var portas = parseInt(p.portas, 10) || 0;
+        var ocupadas = parseInt(p.ocupadas, 10) || 0;
+        if (!sp) {
+            partes.push('sem splitter');
+            alerta = true;
+        } else if (portas) {
+            partes.push(ocupadas + '/' + portas + ' portas');
+        } else {
+            partes.push(plural(sp, 'splitter', 'splitters'));
+        }
+        return '<small' + (alerta ? ' class="alerta"' : '') + '>' + partes.join(' · ') + '</small>';
+    }
+
+    function renderPontos() {
+        var $l = $('#lista-pontos');
+        var semSinal = 0, semSplitter = 0;
+        pontos.forEach(function (p) {
+            if (atendeFiltro(p, 'sem_sinal')) semSinal++;
+            if (atendeFiltro(p, 'sem_splitter')) semSplitter++;
+        });
+        $('#conta-sem-sinal').text(pontosCarregados ? semSinal : '');
+        $('#conta-sem-splitter').text(pontosCarregados ? semSplitter : '');
+        $('#gaveta-aba').toggleClass('filtrando', filtroPontos !== 'todos');
+
+        if (!regiao) {
+            $l.html('<p class="ftth-gaveta-vazio">Escolha uma região na aba Regiões.</p>');
+            return;
+        }
+        if (!pontosCarregados) {
+            $l.html('<p class="ftth-gaveta-vazio">Carregando…</p>');
+            return;
+        }
+
+        var termo = $.trim($('#pontos-busca').val() || '').toLowerCase();
+        var grupos = {};
+        pontos.forEach(function (p) {
+            if (!atendeFiltro(p, filtroPontos)) return;
+            if (termo && String(p.nome).toLowerCase().indexOf(termo) < 0) return;
+            var g = p.tipo === 'CTO_AP' ? 'CTO' : p.tipo;
+            (grupos[g] = grupos[g] || []).push(p);
+        });
+        var ordem = function (g) { var i = ORDEM_GRUPO.indexOf(g); return i < 0 ? 99 : i; };
+        var chaves = Object.keys(grupos).sort(function (a, b) { return ordem(a) - ordem(b); });
+
+        if (!chaves.length) {
+            $l.html('<p class="ftth-gaveta-vazio">' + (filtroPontos !== 'todos'
+                ? 'Nenhuma CTO ou CEO ' + ROTULO_FILTRO[filtroPontos] + ' nesta região.'
+                : (termo ? 'Nenhum ponto com "' + esc(termo) + '".' : 'Nenhum ponto nesta região ainda.'))
+                + '</p>');
+            return;
+        }
+
+        $l.html(chaves.map(function (g) {
+            // Buscando, os grupos abrem todos: o resultado não pode ficar escondido.
+            var fechado = gruposFechados[g] && !termo;
+            return '<div class="ftth-grupo' + (fechado ? ' fechado' : '') + '" data-grupo="' + g + '">'
+                 +   '<button type="button" class="ftth-grupo-topo">'
+                 +     marcaDoTipo(g, '#4A5568') + ' ' + esc(ROTULO_GRUPO[g] || g)
+                 +     ' <span>(' + grupos[g].length + ')</span><i class="bi-chevron-down"></i></button>'
+                 +   '<div class="ftth-grupo-itens">'
+                 +     grupos[g].map(function (p) {
+                          return '<button type="button" class="ftth-item-ponto" data-id="' + p.id + '">'
+                               +   marcaDoTipo(p.tipo, p.cor)
+                               +   '<span><strong>' + esc(p.nome) + '</strong>' + linhaDoPonto(p) + '</span>'
+                               + '</button>';
+                       }).join('')
+                 +   '</div>'
+                 + '</div>';
+        }).join(''));
+    }
+
+    /** Clique na lista: o mapa vai até o ponto e a ficha abre. No celular o painel sai da frente. */
+    function irParaPonto(id) {
+        var p = null;
+        pontos.forEach(function (x) { if (Number(x.id) === Number(id)) p = x; });
+        if (!p || !mapa) return;
+        if (telaEstreita()) abrirGaveta(false);
+        mapa.setCenter({ lat: parseFloat(p.lat), lng: parseFloat(p.lng) });
+        if (mapa.getZoom() < 19) mapa.setZoom(19);
+        abrirFicha(p.id);
+    }
+
+    function escolherFiltro(f) {
+        filtroPontos = f;
+        $('.ftth-filtro').removeClass('ativo').filter('[data-filtro="' + f + '"]').addClass('ativo');
+        renderPontos();
+        if (!pontosCarregados) {
+            recarregarPontos();          // o mapa é redesenhado quando a lista chegar
+        } else if (ultimoDesenho) {
+            desenhar(ultimoDesenho);     // liga/desliga a transparência sem ir ao servidor
+        }
+    }
+
+    /* ------------------------------------------------------------------ aba Ajustes */
+
+    var estadoLido = false;
+
+    function carregarEstado() {
+        if (estadoLido) return;
+        FTTH.chamar({
+            url: 'mapa.php?ajax=estado',
+            onOk: function (e) {
+                estadoLido = true;
+                $('#estado-banco').html(
+                    '<div class="ftth-estado-topo"><strong>Estado do banco</strong>'
+                  +   '<span class="ftth-selo ' + (e.completo ? 'ftth-selo--ok">completo' : 'ftth-selo--erro">incompleto')
+                  +   '</span></div>'
+                  + '<dl class="ftth-estado-dados">'
+                  +   '<dt>Tabelas do addon</dt><dd>' + e.tabelas + ' de ' + e.tabelas_de + '</dd>'
+                  +   '<dt>Schema aplicado</dt><dd>' + (e.schema ? esc(e.schema) + ' em ' + esc(e.schema_em) : '—') + '</dd>'
+                  +   '<dt>Versão do addon</dt><dd>' + esc(e.addon || '—') + '</dd>'
+                  +   (e.aposentadas ? '<dt>Aposentadas</dt><dd>' + e.aposentadas + ' a remover</dd>' : '')
+                  + '</dl>'
+                  + '<p class="ftth-sub" style="margin:6px 0 4px">Banco e arquivos são atualizados pelo '
+                  +   'instalador, no terminal do servidor:</p>'
+                  + '<div class="ftth-estado-cmd"><code id="estado-cmd">' + esc(e.instalador) + '</code>'
+                  +   '<button type="button" class="ftth-copiar" id="estado-copiar">copiar</button></div>');
+            },
+            onErro: function (m) {
+                $('#estado-banco').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
+            }
+        });
+    }
+
+    /**
+     * Salvar: o que pode valer na hora vale — tipo de mapa e zoom do rótulo redesenham o mapa;
+     * o raio de emenda o servidor já lê a cada uso. Só a chave do Google pede recarregar.
+     */
+    function salvarAjustes() {
+        var cfg = window.FTTH_MAPA || {};
+        var chaveAntes = String($('#aj-chave').data('salva') !== undefined
+            ? $('#aj-chave').data('salva') : $('#aj-chave').prop('defaultValue'));
+        var $b = $('#aj-salvar').prop('disabled', true);
+        FTTH.chamar({
+            url: 'mapa.php?ajax=ajustes',
+            method: 'POST',
+            data: {
+                csrf: cfg.csrf,
+                google_maps_key: $('#aj-chave').val(),
+                mapa_tipo: $('#aj-tipo').val(),
+                mapa_rotulo_zoom: $('#aj-zoom').val(),
+                raio_quebra_cabo_m: $('#aj-raio').val()
+            },
+            onOk: function (d) {
+                $('#aj-chave').data('salva', d.google_maps_key);
+                $('#aj-zoom').val(d.mapa_rotulo_zoom);
+                $('#aj-raio').val(d.raio_quebra_cabo_m);
+
+                cfg.rotulo_zoom = d.mapa_rotulo_zoom;
+                if (mapa && d.mapa_tipo !== cfg.tipo) {
+                    cfg.tipo = d.mapa_tipo;
+                    // Híbrido é satélite + a camada de rótulos, que o listener de tipo liga sozinho.
+                    mapa.setMapTypeId(d.mapa_tipo === 'hybrid' ? 'satellite' : d.mapa_tipo);
+                }
+                if (ultimoDesenho) desenhar(ultimoDesenho);
+
+                var trocouChave = d.google_maps_key !== chaveAntes;
+                $('#aj-saida').html('<div class="ftth-aviso ftth-aviso--ok" style="margin:8px 0 0">'
+                    + 'Ajustes salvos.' + (trocouChave ? ' A chave nova vale ao recarregar a página.' : '')
+                    + '</div>');
+            },
+            onErro: function (m) {
+                $('#aj-saida').html('<div class="ftth-aviso ftth-aviso--erro" style="margin:8px 0 0">'
+                    + esc(m) + '</div>');
+            }
+        }).always(function () { $b.prop('disabled', false); });
+    }
+
+    /* Primeira instalação: sem chave não há mapa, nem painel. O campo mora no próprio aviso. */
+    $(function () {
+        $('#chave-inicial-salvar').on('click', function () {
+            var chave = $.trim($('#chave-inicial').val());
+            if (!chave) {
+                $('#chave-inicial-saida').html('<p class="ftth-sub" style="margin:6px 0 0">Cole a chave.</p>');
+                return;
+            }
+            var $b = $(this).prop('disabled', true);
+            FTTH.chamar({
+                url: 'mapa.php?ajax=ajustes',
+                method: 'POST',
+                data: { csrf: (window.FTTH_MAPA || {}).csrf, google_maps_key: chave },
+                onOk: function () { window.location.reload(); },
+                onErro: function (m) {
+                    $('#chave-inicial-saida').html('<div class="ftth-aviso ftth-aviso--erro" '
+                        + 'style="margin:8px 0 0">' + esc(m) + '</div>');
+                    $b.prop('disabled', false);
+                }
+            });
+        });
+        $('#chave-inicial').on('keydown', function (e) {
+            if (e.key === 'Enter') $('#chave-inicial-salvar').trigger('click');
+        });
+    });
+
+    /* Preferência do painel (aberto, aba): conveniência deste navegador, nada além disso. */
+    function lerPref(chave) {
+        try { return localStorage.getItem(chave); } catch (e) { return null; }
+    }
+    function gravarPref(chave, valor) {
+        try { localStorage.setItem(chave, valor); } catch (e) { /* sem storage: não lembra */ }
+    }
+
+    function abrirGaveta(aberta) {
+        $('#mapa-area').toggleClass('gaveta-aberta', !!aberta);
+        gravarPref('ftth_gaveta', aberta ? '1' : '0');
+        if (abaPontosVisivel() && !pontosCarregados) recarregarPontos();
+        if (aberta && $('.ftth-gaveta-tab.ativo').data('aba') === 'ajustes') carregarEstado();
+    }
+
+    function escolherAba(aba) {
+        if (!$('.ftth-gaveta-tab[data-aba="' + aba + '"]').length) aba = 'regioes';
+        $('.ftth-gaveta-tab').removeClass('ativo').filter('[data-aba="' + aba + '"]').addClass('ativo');
+        $('.ftth-gaveta-corpo').hide().filter('[data-aba="' + aba + '"]').show();
+        gravarPref('ftth_gaveta_aba', aba);
+        if (abaPontosVisivel() && !pontosCarregados) recarregarPontos();
+        if (aba === 'ajustes' && $('#mapa-area').hasClass('gaveta-aberta')) carregarEstado();
+    }
+
+    /** Nome da região: o mesmo modal cria (passo 1) e renomeia. */
+    var regiaoEditando = null;   // null = nova; senão, a região sendo renomeada
+
+    function abrirModalRegiao(r) {
+        regiaoEditando = r || null;
+        $('#rg-titulo').text(r ? 'Renomear região' : 'Nova região');
+        $('#rg-salvar').text(r ? 'Salvar' : 'Continuar');
+        $('#rg-nota').text(r ? '' : 'Depois do nome, você posiciona o mapa onde a região fica.');
+        $('#rg-nome').val(r ? r.nome : '');
+        $('#rg-saida').empty();
+        $('#modal-regiao').show();
+        setTimeout(function () { $('#rg-nome').trigger('focus').trigger('select'); }, 50);
+    }
+
+    function salvarModalRegiao() {
+        var cfg = window.FTTH_MAPA || {};
+        var nome = $.trim($('#rg-nome').val());
+        var erro = function (m) {
+            $('#rg-saida').html('<div class="ftth-aviso ftth-aviso--erro" style="margin:8px 0 0">'
+                + esc(m) + '</div>');
+        };
+        if (!nome) { erro('Informe o nome da região.'); return; }
+        var repetida = regioes.some(function (x) {
+            return x.nome.toLowerCase() === nome.toLowerCase()
+                && (!regiaoEditando || Number(x.id) !== Number(regiaoEditando.id));
+        });
+        if (repetida) { erro('Já existe uma região com esse nome.'); return; }
+
+        if (!regiaoEditando) {
+            $('#modal-regiao').hide();
+            iniciarPosicionamento(nome);
+            return;
+        }
+
+        $('#rg-salvar').prop('disabled', true);
+        FTTH.chamar({
+            url: 'mapa.php?ajax=regiao_alterar',
+            method: 'POST',
+            data: { csrf: cfg.csrf, id: regiaoEditando.id, versao: regiaoEditando.versao, nome: nome },
+            onOk: function () {
+                $('#modal-regiao').hide();
+                recarregarRegioes();
+            },
+            onErro: erro
+        }).always(function () { $('#rg-salvar').prop('disabled', false); });
+    }
+
+    /** Nova região, passo 2: o usuário leva o mapa até a região e confirma. */
+    var nomeNovaRegiao = null;
+
+    function iniciarPosicionamento(nome) {
+        definirModo('navegar');
+        if (modo !== 'navegar') return;
+        nomeNovaRegiao = nome;
+        $('#painel').hide();
+        abrirGaveta(false);
+        $('#regiao-card-nome').text(nome);
+        $('#regiao-card').show();
+        ajustarToasts();
+        FTTH.toast('info', 'Arraste e aproxime o mapa até ' + nome + ' (ou busque a coordenada) e confirme.');
+    }
+
+    function encerrarPosicionamento() {
+        nomeNovaRegiao = null;
+        $('#regiao-card').hide();
+        ajustarToasts();
+    }
+
+    function confirmarNovaRegiao() {
+        var cfg = window.FTTH_MAPA || {};
+        var c = mapa.getCenter();
+        var $b = $('#regiao-card-confirmar').prop('disabled', true);
+        FTTH.chamar({
+            url: 'mapa.php?ajax=regiao_criar',
+            method: 'POST',
+            data: { csrf: cfg.csrf, nome: nomeNovaRegiao, lat: c.lat(), lng: c.lng(), zoom: mapa.getZoom() },
+            onOk: function (d) {
+                var nome = nomeNovaRegiao;
+                encerrarPosicionamento();
+                recarregarRegioes(function () { trocarRegiao(d.id); });
+                FTTH.toast('ok', 'Região ' + nome + ' criada.');
+            },
+            onErro: function (m) { FTTH.toast('erro', m); }
+        }).always(function () { $b.prop('disabled', false); });
+    }
+
+    function usarVistaComoCentro(r) {
+        var cfg = window.FTTH_MAPA || {};
+        var n = parseInt(r.caixas, 10) || 0;
+        var msg = 'Gravar a vista atual do mapa como centro de "' + r.nome + '"?'
+            + (n ? '\n\nEla já tem pontos: ao entrar nela o mapa enquadra os pontos, e este '
+                 + 'centro só vale se ela ficar vazia.' : '');
+        if (!confirm(msg)) return;
+        var c = mapa.getCenter();
+        FTTH.chamar({
+            url: 'mapa.php?ajax=regiao_alterar',
+            method: 'POST',
+            data: { csrf: cfg.csrf, id: r.id, versao: r.versao,
+                    lat: c.lat(), lng: c.lng(), zoom: mapa.getZoom() },
+            onOk: function () {
+                recarregarRegioes();
+                FTTH.toast('ok', 'Centro de ' + r.nome + ' atualizado.');
+            },
+            onErro: function (m) { FTTH.toast('erro', m); }
+        });
+    }
+
+    function excluirRegiao(r) {
+        var cfg = window.FTTH_MAPA || {};
+        if (!confirm('Excluir a região "' + r.nome + '"?\n\nSó é possível com ela vazia.')) return;
+        FTTH.chamar({
+            url: 'mapa.php?ajax=regiao_excluir',
+            method: 'POST',
+            data: { csrf: cfg.csrf, id: r.id, versao: r.versao },
+            onOk: function () {
+                var eraAtual = Number(r.id) === Number(regiao);
+                recarregarRegioes(function () {
+                    if (!eraAtual) return;
+                    if (regioes.length) {
+                        trocarRegiao(regioes[0].id);
+                    } else {
+                        regiao = 0;
+                        limpar();
+                        $('#resumo-mapa').empty();
+                        posicionarNaRegiao(null);
+                    }
+                });
+                FTTH.toast('ok', 'Região ' + r.nome + ' excluída.');
+            },
+            onErro: function (m) { FTTH.toast('erro', m); }
+        });
+    }
+
+    function iniciarGaveta() {
+        renderRegioes();
+        escolherAba(lerPref('ftth_gaveta_aba') || 'regioes');
+        // Sem região não há o que fazer no mapa: o painel já abre mostrando como criar uma.
+        // No celular ele não reabre sozinho, porque cobriria o mapa inteiro.
+        if (!regioes.length) {
+            escolherAba('regioes');
+            abrirGaveta(true);
+        } else {
+            abrirGaveta(lerPref('ftth_gaveta') === '1' && !telaEstreita());
+        }
+
+        $('#gaveta-aba').on('click', function () {
+            abrirGaveta(!$('#mapa-area').hasClass('gaveta-aberta'));
+        });
+        $('.ftth-gaveta-tab').on('click', function () { escolherAba($(this).data('aba')); });
+
+        var $lista = $('#lista-regioes');
+        $lista.on('click', '.ftth-regiao-topo', function (ev) {
+            if ($(ev.target).closest('.ftth-regiao-mais').length) return;
+            trocarRegiao($(this).closest('.ftth-regiao').data('id'));
+        });
+        $lista.on('click', '.ftth-regiao-mais', function () {
+            var $r = $(this).closest('.ftth-regiao');
+            $lista.find('.ftth-regiao').not($r).removeClass('menu-aberto');
+            $r.toggleClass('menu-aberto');
+        });
+        $lista.on('click', '.ftth-regiao-menu button', function () {
+            var r = acharRegiao($(this).closest('.ftth-regiao').data('id'));
+            $(this).closest('.ftth-regiao').removeClass('menu-aberto');
+            if (!r) return;
+            var acao = $(this).data('acao');
+            if (acao === 'renomear') abrirModalRegiao(r);
+            else if (acao === 'vista') usarVistaComoCentro(r);
+            else if (acao === 'excluir') excluirRegiao(r);
+        });
+
+        $('#regiao-nova').on('click', function () { abrirModalRegiao(null); });
+
+        // --- aba Ajustes
+        $('#aj-salvar').on('click', salvarAjustes);
+        $('#estado-banco').on('click', '#estado-copiar', function () {
+            var texto = $('#estado-cmd').text();
+            var $b = $(this);
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(texto).then(function () { $b.text('copiado'); });
+            } else {
+                window.prompt('Copie o comando:', texto);
+            }
+        });
+
+        // --- aba Pontos
+        renderPontos();
+        $('#pontos-busca').on('input', renderPontos);
+        $('.ftth-filtro').on('click', function () { escolherFiltro($(this).data('filtro')); });
+        var $pontos = $('#lista-pontos');
+        $pontos.on('click', '.ftth-grupo-topo', function () {
+            var $g = $(this).closest('.ftth-grupo');
+            $g.toggleClass('fechado');
+            gruposFechados[$g.data('grupo')] = $g.hasClass('fechado');
+        });
+        $pontos.on('click', '.ftth-item-ponto', function () { irParaPonto($(this).data('id')); });
+        $('#rg-salvar').on('click', salvarModalRegiao);
+        $('#rg-nome').on('keydown', function (e) { if (e.key === 'Enter') salvarModalRegiao(); });
+        $('#rg-cancelar, #rg-fechar').on('click', function () { $('#modal-regiao').hide(); });
+        $('#regiao-card-confirmar').on('click', confirmarNovaRegiao);
+        $('#regiao-card-cancelar').on('click', function () {
+            encerrarPosicionamento();
+            abrirGaveta(true);
+        });
+    }
+
     window.ftthIniciarMapa = function () {
         var cfg = window.FTTH_MAPA || {};
         regiao = cfg.regiao || 0;
 
+        regioes = cfg.regioes || [];
+
+        // Prioridade 1: a vista guardada na aba (volta do diagrama, F5), se a região dela
+        // ainda existe. Sem ela, a região é posicionada logo depois de o mapa nascer.
+        var vista = lerVista();
+        if (vista && acharRegiao(vista.regiao)) {
+            regiao = parseInt(vista.regiao, 10);
+        } else {
+            vista = null;
+        }
+
         ajustarAltura();
         window.addEventListener('resize', ajustarAltura);
+        window.addEventListener('resize', ajustarToasts);
+        // A dica longa do modo Mover, que em tela estreita sai do card.
+        $('#mover-ajuda').on('click', function () {
+            FTTH.toast('info', $.trim($('#mover-dica').text()));
+        });
 
         // Os pontos de interesse do Google (farmácia, loja, mercado, ponto de ônibus)
         // disputam a tela com as caixas e os cabos, que são o assunto aqui.
@@ -1638,8 +2451,8 @@
         var tipo = cfg.tipo || 'hybrid';
 
         mapa = new google.maps.Map(document.getElementById('mapa'), {
-            center: { lat: cfg.lat, lng: cfg.lng },
-            zoom: cfg.zoom || 15,
+            center: vista ? { lat: vista.lat, lng: vista.lng } : CENTRO_BRASIL,
+            zoom: vista ? vista.zoom : ZOOM_BRASIL,
             // Tipo de mapa vem de tab_ftth_config (mapa_tipo). Padrão: híbrido — satélite
             // com nome de rua, que é o que serve para o técnico em campo.
             //
@@ -1679,8 +2492,9 @@
 
         // Só busca depois que o usuário parou de mexer — evita uma consulta por pixel.
         mapa.addListener('idle', function () {
+            guardarVista();
             clearTimeout(esperando);
-            esperando = setTimeout(carregar, 250);
+            esperando = setTimeout(function () { carregar(true); }, 250);
         });
 
         // Clique no mapa (fora de qualquer item): ancora a caixa em espera, ou fecha a ficha.
@@ -1696,7 +2510,9 @@
         $(document).on('click', '.ftth-tipo', function () {
             $('.ftth-tipo').removeClass('ativo');
             $(this).addClass('ativo');
-            sugerirNome('');
+            camposDoTipo();
+            // Na edição o nome é o que o ponto já tem; sugerir outro apagaria o dele.
+            if (!editando) sugerirNome('');
             if (pinTemporario) pinTemporario.setIcon(icone(tipoSelecionado(), corSelecionada(), true));
         });
         $(document).on('click', '.ftth-cor', function () {
@@ -1717,9 +2533,13 @@
             limparTracado();
             definirModo('navegar');
         });
-        $('#cb-salvar').on('click', salvarCabo);
+        $('#cb-salvar').on('click', confirmarConfigCabo);
+        $('#cabo-config').on('click', abrirConfigCabo);
+        // Antes de desenhar, fechar o popup é desistir do cabo; desenhando, é só voltar ao
+        // traçado, que continua na tela.
         $('#cb-cancelar, #cabo-modal-fechar').on('click', function () {
-            $('#modal-cabo').hide();   // volta para o traçado, que continua desenhado
+            $('#modal-cabo').hide();
+            if (!desenhandoCabo()) definirModo('navegar');
         });
         $(document).on('click', '#cb-cores .ftth-cor', function () {
             $('#cb-cores .ftth-cor').removeClass('ativo');
@@ -1758,21 +2578,12 @@
             // Desistiu da caixa: a emenda que ele tinha aceitado no clique morre junto.
             emendaDesejada = null;
             limparPin();
-            FTTH.toast('info', 'Clique no mapa para marcar o ponto da caixa.');
+            FTTH.toast('info', 'Clique no mapa para marcar o ponto.');
         });
         $(document).on('keydown', function (e) { if (e.key === 'Escape') definirModo('navegar'); });
 
-        $('#sel-regiao').on('change', function () {
-            var o = this.options[this.selectedIndex];
-            regiao = parseInt(this.value, 10) || 0;
-            var lat = parseFloat(o.getAttribute('data-lat'));
-            var lng = parseFloat(o.getAttribute('data-lng'));
-            if (!isNaN(lat) && !isNaN(lng)) {
-                mapa.setCenter({ lat: lat, lng: lng });
-                mapa.setZoom(parseInt(o.getAttribute('data-zoom'), 10) || 15);
-            }
-            carregar();
-        });
+        iniciarGaveta();
+        if (!vista) posicionarNaRegiao(acharRegiao(regiao));
 
         $('.cam').on('change', function () {
             camadas[this.value] = this.checked;
@@ -1855,15 +2666,6 @@
             definirModo('navegar');     // sem pendências, não pergunta de novo
         });
 
-        $('#btn-camadas').on('click', function (ev) {
-            ev.stopPropagation();
-            $('#camadas').toggleClass('aberto');
-        });
-        $('#camadas-lista').on('click', function (ev) { ev.stopPropagation(); });
-        $(document).on('click', function () { $('#camadas').removeClass('aberto'); });
-        $(document).on('keydown', function (ev) {
-            if (ev.key === 'Escape') $('#camadas').removeClass('aberto');
-        });
         atualizarContaCamadas();
 
         var timerBusca = null;

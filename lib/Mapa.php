@@ -10,6 +10,7 @@ require_once __DIR__ . '/Geo.php';
 require_once __DIR__ . '/Potencia.php';
 require_once __DIR__ . '/Caixa.php';
 require_once __DIR__ . '/Cabo.php';
+require_once __DIR__ . '/Reserva.php';
 
 final class Mapa
 {
@@ -33,6 +34,7 @@ final class Mapa
         // Ocupação da CTO sai dos splitters de atendimento: portas usadas / saídas do splitter.
         $caixas = Db::todos(
             "SELECT c.id, c.tipo, c.nome, c.cor, c.lat, c.lng, c.status, c.capacidade, c.versao,
+                    c.reserva_m, c.vao_id,
                     (SELECT COUNT(*) FROM tab_ftth_splitter s
                       WHERE s.caixa_id = c.id AND s.excluido_em IS NULL) AS splitters,
                     (SELECT COALESCE(SUM(s.saidas),0) FROM tab_ftth_splitter s
@@ -77,7 +79,9 @@ final class Mapa
 
         $vaos = Db::todos(
             "SELECT v.id, v.cabo_id, v.caixa_ini_id, v.caixa_fim_id, v.vertices,
-                    v.comprimento_geo, v.comprimento_optico, v.versao,
+                    v.comprimento_geo, v.comprimento_optico, v.reserva_m, v.versao,
+                    (SELECT COUNT(*) FROM tab_ftth_caixa rs WHERE rs.tipo = 'RESERVA'
+                        AND rs.vao_id = v.id AND rs.excluido_em IS NULL) AS reservas,
                     cb.nome AS cabo_nome, cb.cor_rota, cb.fabricante, cb.padrao_cores,
                     cb.cabo_tipo_id, cb.status, cb.origem AS cabo_origem, cb.versao AS cabo_versao,
                     t.rotulo AS cabo_tipo, t.fibras, t.construcao,
@@ -251,6 +255,7 @@ final class Mapa
                         throw new RuntimeException('movimento recusado');
                     }
                 }
+                self::ajustarReservas($caixas, $vaos, $usuario);
                 return Resultado::ok(['caixas' => count($caixas), 'vaos' => count($vaos)]);
             });
         } catch (Throwable $e) {
@@ -259,6 +264,66 @@ final class Mapa
             }
             throw $e;      // erro de verdade continua subindo para o log
         }
+    }
+
+    /**
+     * Reservas depois do lote do modo Mover, quando o traçado já é o novo.
+     *
+     * Primeiro a reserva que foi arrastada: cai sobre um cabo e passa a ser dele, ou volta
+     * para o seu. Depois as que estão em vão que mudou de forma (traçado mexido ou caixa da
+     * ponta movida) são recoladas no traçado. A ordem importa: recolar antes jogaria a
+     * reserva arrastada de volta para o cabo antigo.
+     */
+    private static function ajustarReservas(array $caixas, array $vaos, string $usuario): void
+    {
+        $idsCaixas = array_values(array_filter(array_map(static function ($c) {
+            return (int) ($c['id'] ?? 0);
+        }, $caixas)));
+        $vaoIds = array_map(static function ($v) { return (int) ($v['id'] ?? 0); }, $vaos);
+
+        if ($idsCaixas) {
+            $marcas = implode(',', array_fill(0, count($idsCaixas), '?'));
+            foreach (Db::todos('SELECT id FROM tab_ftth_caixa WHERE tipo = "RESERVA" AND id IN ('
+                               . $marcas . ')', $idsCaixas) as $r) {
+                Reserva::reancorar((int) $r['id'], $usuario);
+            }
+            foreach (Db::todos('SELECT id FROM tab_ftth_cabo_vao WHERE excluido_em IS NULL
+                                  AND (caixa_ini_id IN (' . $marcas . ') OR caixa_fim_id IN (' . $marcas . '))',
+                               array_merge($idsCaixas, $idsCaixas)) as $v) {
+                $vaoIds[] = (int) $v['id'];
+            }
+        }
+        Reserva::colarReservasDosVaos($vaoIds);
+    }
+
+    /**
+     * Todos os pontos da região, para a lista do painel — a região inteira, não a área
+     * visível: o filtro "sem sinal" precisa dizer quantas faltam mesmo fora da tela.
+     *
+     * `com_sinal` só é calculado para CTO e CEO (o que o filtro olha); nos demais vem null.
+     */
+    public static function pontos(int $regiaoId): array
+    {
+        $pontos = Db::todos(
+            "SELECT c.id, c.tipo, c.nome, c.cor, c.lat, c.lng, c.reserva_m,
+                    (SELECT COUNT(*) FROM tab_ftth_splitter s
+                      WHERE s.caixa_id = c.id AND s.excluido_em IS NULL) AS splitters,
+                    (SELECT COALESCE(SUM(s.saidas),0) FROM tab_ftth_splitter s
+                      WHERE s.caixa_id = c.id AND s.excluido_em IS NULL AND s.funcao = 'ATENDIMENTO') AS portas,
+                    (SELECT COUNT(*) FROM tab_ftth_porta p
+                       JOIN tab_ftth_splitter s2 ON s2.id = p.splitter_id
+                      WHERE s2.caixa_id = c.id AND s2.excluido_em IS NULL) AS ocupadas
+               FROM tab_ftth_caixa c
+              WHERE c.regiao_id = ? AND c.excluido_em IS NULL
+              ORDER BY c.nome", [$regiaoId]);
+
+        $comSinal = Potencia::caixasComSinal();
+        foreach ($pontos as &$p) {
+            $p['com_sinal'] = in_array($p['tipo'], ['CTO', 'CTO_AP', 'CEO'], true)
+                ? isset($comSinal[(int) $p['id']]) : null;
+        }
+        unset($p);
+        return $pontos;
     }
 
     /** Ficha resumida de uma caixa (nível 1 da UX). */
@@ -295,6 +360,20 @@ final class Mapa
             [$caixaId, $caixaId, $caixaId]);
 
         $c['ligacoes'] = (int) Db::valor('SELECT COUNT(*) FROM tab_ftth_ligacao WHERE caixa_id = ?', [$caixaId]);
+
+        // Reserva: o cabo em que ela está e quanto o vão soma de reserva no total.
+        $c['vao_reserva'] = null;
+        if ($c['tipo'] === 'RESERVA' && $c['vao_id'] !== null) {
+            $c['vao_reserva'] = Db::um(
+                'SELECT v.id, v.reserva_m, v.comprimento_geo, v.comprimento_optico,
+                        cb.nome AS cabo, t.rotulo AS tipo, ci.nome AS caixa_ini, cf.nome AS caixa_fim
+                   FROM tab_ftth_cabo_vao v
+                   JOIN tab_ftth_cabo cb ON cb.id = v.cabo_id
+                   JOIN tab_ftth_cabo_tipo t ON t.id = cb.cabo_tipo_id
+                   JOIN tab_ftth_caixa ci ON ci.id = v.caixa_ini_id
+                   JOIN tab_ftth_caixa cf ON cf.id = v.caixa_fim_id
+                  WHERE v.id = ? AND v.excluido_em IS NULL', [(int) $c['vao_id']]) ?: null;
+        }
 
         // Serviço, equipamento, DIO/porta e a estimativa de sinal vinham escritos como "—"
         // na tela desde a fase 1, à espera do motor de potência. Ele existe agora, então a

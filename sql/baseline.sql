@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS `tab_ftth_caixa` (
   `pai_id`        INT UNSIGNED NULL COMMENT 'CTO dentro de PREDIO/DC',
   `andar`         VARCHAR(20)  NULL,
   `capacidade`    SMALLINT UNSIGNED NULL COMMENT 'portas de atendimento previstas',
+  `reserva_m`     DECIMAL(8,2) NULL COMMENT 'so RESERVA: metros de cabo enrolado',
+  `vao_id`        INT UNSIGNED NULL COMMENT 'so RESERVA: o vao em que a reserva esta',
   `status`        ENUM('projeto','implantada','certificada') NOT NULL DEFAULT 'implantada',
   `observacao`    TEXT         NULL,
   `qr_token`      CHAR(32)     NULL,
@@ -207,6 +209,7 @@ CREATE TABLE IF NOT EXISTS `tab_ftth_caixa` (
   KEY `ix_bbox` (`regiao_id`, `lat`, `lng`),
   KEY `ix_tipo` (`regiao_id`, `tipo`, `excluido_em`),
   KEY `ix_pai` (`pai_id`),
+  KEY `ix_vao` (`vao_id`),
   CONSTRAINT `fk_caixa_regiao` FOREIGN KEY (`regiao_id`) REFERENCES `tab_ftth_regiao` (`id`),
   CONSTRAINT `fk_caixa_pai`    FOREIGN KEY (`pai_id`)    REFERENCES `tab_ftth_caixa` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -606,6 +609,38 @@ SET @tem := (SELECT COUNT(*) FROM information_schema.STATISTICS
                 AND INDEX_NAME = 'ix_ancora_item');
 SET @sql := IF(@tem = 0,
   'ALTER TABLE `tab_ftth_importacao_item` ADD KEY `ix_ancora_item` (`ancora_ini_item_id`, `ancora_fim_item_id`)',
+  'DO 1');
+PREPARE st FROM @sql;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+-- 0.9.3: a Reserva mora em cima de um vao e soma seus metros no comprimento optico dele.
+-- O reserva_m do vao passa a ser a soma das reservas que estao nele (lib/Reserva.php).
+SET @tem := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tab_ftth_caixa'
+                AND COLUMN_NAME = 'reserva_m');
+SET @sql := IF(@tem = 0,
+  'ALTER TABLE `tab_ftth_caixa` ADD COLUMN `reserva_m` DECIMAL(8,2) NULL COMMENT "so RESERVA: metros de cabo enrolado" AFTER `capacidade`',
+  'DO 1');
+PREPARE st FROM @sql;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+SET @tem := (SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tab_ftth_caixa'
+                AND COLUMN_NAME = 'vao_id');
+SET @sql := IF(@tem = 0,
+  'ALTER TABLE `tab_ftth_caixa` ADD COLUMN `vao_id` INT UNSIGNED NULL COMMENT "so RESERVA: o vao em que a reserva esta" AFTER `reserva_m`',
+  'DO 1');
+PREPARE st FROM @sql;
+EXECUTE st;
+DEALLOCATE PREPARE st;
+
+SET @tem := (SELECT COUNT(*) FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tab_ftth_caixa'
+                AND INDEX_NAME = 'ix_vao');
+SET @sql := IF(@tem = 0,
+  'ALTER TABLE `tab_ftth_caixa` ADD KEY `ix_vao` (`vao_id`)',
   'DO 1');
 PREPARE st FROM @sql;
 EXECUTE st;

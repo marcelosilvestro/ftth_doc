@@ -12,6 +12,11 @@ require_once __DIR__ . '/Resultado.php';
 
 final class Regiao
 {
+    /**
+     * Regiões com contagens e a moldura dos pontos (lat_min..lng_max, nula em região vazia).
+     * Com a moldura o mapa enquadra a rede ao entrar na região, e o centro gravado só vale
+     * para região vazia — um centro errado deixa de importar no primeiro ponto.
+     */
     public static function listar(): array
     {
         return Db::todos(
@@ -21,8 +26,13 @@ final class Regiao
                     (SELECT COUNT(*) FROM tab_ftth_cabo_vao v
                       WHERE v.regiao_id = r.id AND v.excluido_em IS NULL) AS vaos,
                     (SELECT COUNT(*) FROM tab_ftth_importacao_item i
-                      WHERE i.regiao_id = r.id AND i.status = "pendente") AS quarentena
+                      WHERE i.regiao_id = r.id AND i.status = "pendente") AS quarentena,
+                    b.lat_min, b.lat_max, b.lng_min, b.lng_max
                FROM tab_ftth_regiao r
+               LEFT JOIN (SELECT regiao_id, MIN(lat) AS lat_min, MAX(lat) AS lat_max,
+                                 MIN(lng) AS lng_min, MAX(lng) AS lng_max
+                            FROM tab_ftth_caixa WHERE excluido_em IS NULL
+                           GROUP BY regiao_id) b ON b.regiao_id = r.id
               WHERE r.excluido_em IS NULL
               ORDER BY r.nome'
         );

@@ -791,10 +791,17 @@
      * na vertical para as barras cruzarem a linha em vez de acompanharem ela.
      */
     function marcarEmenda(pts, g, ligacaoId) {
-        var i   = Math.floor(pts.length / 2);
-        var m   = pts[i];
-        var viz = pts[i - 1] || pts[i + 1] || m;
-        var vertical = Math.abs(m[1] - viz[1]) > Math.abs(m[0] - viz[0]);
+        if (pts.length < 2) return;
+        // Meio do trecho mais longo, nunca um vértice: no vértice do meio a marca caía na
+        // quina da linha e, na linha reta (só dois pontos), em cima da bolinha do destino.
+        var maior = 1, comp = -1;
+        for (var i = 1; i < pts.length; i++) {
+            var c = Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]);
+            if (c > comp) { comp = c; maior = i; }
+        }
+        var p0 = pts[maior - 1], p1 = pts[maior];
+        var m  = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+        var vertical = Math.abs(p1[1] - p0[1]) > Math.abs(p1[0] - p0[0]);
 
         var d = vertical
             ? 'M' + (m[0] - 5) + ' ' + (m[1] - 4) + ' l10 4 '

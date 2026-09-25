@@ -156,7 +156,7 @@
                  +  (parseInt(d.ativo, 10) ? 'painel ativo' : 'inativo') + '</span></h2>'
                  +  '<p class="ftth-sub">' + usadas + ' de ' + d.portas + ' portas em uso · '
                  +  'cada cartão traz equipamento, serviço e saída para a rua</p>'
-                 +  '<div class="ftth-portas">';
+                 +  '<div class="ftth-portas-rolagem"><div class="ftth-portas">';
 
             d.portas_lista.forEach(function (p) {
                 html += '<button class="ftth-porta ftth-porta--' + p.status + ' js-porta" data-id="' + p.id + '">'
@@ -168,7 +168,7 @@
                      +  '</button>';
             });
 
-            html += '</div>';
+            html += '</div></div>';
             html += '<div class="ftth-pop-acoes" style="margin-top:12px">'
                  +  '<button class="ftth-btn ftth-btn--sec js-dio-editar" data-id="' + d.id + '">'
                  +  '<i class="bi-pencil"></i> Renomear / capacidade</button>'

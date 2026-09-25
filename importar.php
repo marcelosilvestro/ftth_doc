@@ -133,8 +133,7 @@ include('nav/header.php');
     </p>
 
     <div class="ftth-acoes-topo">
-        <a class="ftth-btn ftth-btn--sec" href="index.php"><i class="bi-arrow-left"></i> Configurações</a>
-        <a class="ftth-btn ftth-btn--sec" href="mapa.php"><i class="bi-geo-fill"></i> Mapa</a>
+        <a class="ftth-btn ftth-btn--sec" href="mapa.php"><i class="bi-arrow-left"></i> Mapa</a>
     </div>
 
     <?php if ($falha): ?><div class="ftth-aviso ftth-aviso--erro"><?= htmlspecialchars($falha) ?></div><?php endif; ?>

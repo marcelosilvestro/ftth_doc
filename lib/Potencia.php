@@ -166,6 +166,22 @@ final class Potencia
         ];
     }
 
+    /**
+     * Todas as caixas que recebem sinal, de uma vez: [caixa_id => true].
+     *
+     * É o mesmo critério do "sem caminho óptico" da ficha (alguma ponta da caixa alcançada a
+     * partir de uma origem), mas numa propagação só para a rede inteira — a lista de pontos
+     * do painel não pode pagar uma conta por caixa.
+     */
+    public static function caixasComSinal(): array
+    {
+        $saida = [];
+        foreach (self::propagar() as $chave => $no) {
+            $saida[(int) strtok($chave, ':')] = true;
+        }
+        return $saida;
+    }
+
     /** Zera o cache — os testes mexem no grafo entre uma conta e outra. */
     public static function esquecer(): void
     {

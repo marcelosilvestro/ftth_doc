@@ -12,6 +12,7 @@ require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Versao.php';
 require_once __DIR__ . '/Auditoria.php';
 require_once __DIR__ . '/Resultado.php';
+require_once __DIR__ . '/Reserva.php';
 
 final class Caixa
 {
@@ -157,22 +158,58 @@ final class Caixa
             $cor = '#00C853';
         }
 
-        return Db::transacao(function () use ($regiaoId, $tipo, $nome, $cor, $lat, $lng, $usuario, $extra) {
+        // Reserva nasce em cima de um cabo, colada no traçado, e com os metros que somam nele.
+        $vaoId = null;
+        $reservaM = null;
+        if ($tipo === 'RESERVA') {
+            $ancora = self::ancoraDaReserva($regiaoId, $lat, $lng, $extra['reserva_m'] ?? null);
+            if ($ancora instanceof Resultado) {
+                return $ancora;
+            }
+            [$vaoId, $reservaM, $lat, $lng] = $ancora;
+        }
+
+        return Db::transacao(function () use ($regiaoId, $tipo, $nome, $cor, $lat, $lng, $usuario, $extra,
+                                              $vaoId, $reservaM) {
             Db::exec(
                 'INSERT INTO tab_ftth_caixa
-                    (regiao_id, tipo, nome, cor, lat, lng, capacidade, pai_id, andar, observacao,
-                     origem, criado_por, criado_em)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,"manual",?,NOW())',
+                    (regiao_id, tipo, nome, cor, lat, lng, capacidade, reserva_m, vao_id, pai_id,
+                     andar, observacao, origem, criado_por, criado_em)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,"manual",?,NOW())',
                 [$regiaoId, $tipo, $nome, $cor, $lat, $lng,
-                 $extra['capacidade'] ?? null, $extra['pai_id'] ?? null,
+                 $extra['capacidade'] ?? null, $reservaM, $vaoId, $extra['pai_id'] ?? null,
                  $extra['andar'] ?? null, $extra['observacao'] ?? null, $usuario]
             );
             $id = Db::ultimoId();
+            if ($vaoId !== null) {
+                Reserva::recalcularVao($vaoId, $usuario);
+            }
             Auditoria::registrar('caixa', $id, 'criar', null,
                 ['nome' => $nome, 'tipo' => $tipo, 'lat' => $lat, 'lng' => $lng], $regiaoId);
             return Resultado::ok(['id' => $id, 'nome' => $nome, 'tipo' => $tipo, 'cor' => $cor,
                                   'lat' => $lat, 'lng' => $lng]);
         });
+    }
+
+    /**
+     * Onde a reserva vai morar: o vão sob o ponto e o ponto já colado no traçado.
+     *
+     * @return array{0:int,1:float,2:float,3:float}|Resultado [vao_id, metros, lat, lng] ou a recusa
+     */
+    private static function ancoraDaReserva(int $regiaoId, float $lat, float $lng, $metros)
+    {
+        $m = Reserva::metros($metros);
+        if ($m === null || $m <= 0) {
+            return Resultado::erro('FTTH-SYS-002', ['campo' => 'reserva_m'],
+                'Informe os metros da reserva (até ' . Reserva::MAX_METROS . ' m).');
+        }
+        $sob = Cabo::vaoSobPonto($regiaoId, $lat, $lng);
+        if ($sob === null) {
+            return Resultado::erro('FTTH-SYS-002', ['campo' => 'ponto'],
+                'A reserva precisa ficar em cima de um cabo. Marque o ponto sobre o traçado.');
+        }
+        return [(int) $sob['vao']['id'], $m,
+                round((float) $sob['projecao']['lat'], 7), round((float) $sob['projecao']['lng'], 7)];
     }
 
     /**
@@ -279,19 +316,58 @@ final class Caixa
                 'Já existe uma caixa com esse nome nesta região.');
         }
 
-        return Db::transacao(function () use ($id, $nome, $tipo, $cor, $campos, $versao, $usuario, $antes) {
+        // Reserva: metros e o vão onde ela está. Vira reserva (ou é uma reserva do KMZ, sem
+        // cabo) -> precisa de um cabo sob o ponto. Deixa de ser -> sai do cabo.
+        $lat = (float) $antes['lat'];
+        $lng = (float) $antes['lng'];
+        $vaoId = $antes['vao_id'] !== null ? (int) $antes['vao_id'] : null;
+        $reservaM = $antes['reserva_m'] !== null ? (float) $antes['reserva_m'] : null;
+        if ($tipo === 'RESERVA') {
+            if ($antes['tipo'] !== 'RESERVA' && (int) Db::valor(
+                    'SELECT COUNT(*) FROM tab_ftth_cabo_vao
+                      WHERE (caixa_ini_id = ? OR caixa_fim_id = ?) AND excluido_em IS NULL', [$id, $id]) > 0) {
+                return Resultado::erro('FTTH-SYS-002', ['campo' => 'tipo'],
+                    'Esta caixa é ponta de cabo e não pode virar reserva.');
+            }
+            $metros = array_key_exists('reserva_m', $campos) ? $campos['reserva_m'] : $reservaM;
+            if ($vaoId === null) {
+                $ancora = self::ancoraDaReserva((int) $antes['regiao_id'], $lat, $lng, $metros);
+                if ($ancora instanceof Resultado) {
+                    return $ancora;
+                }
+                [$vaoId, $reservaM, $lat, $lng] = $ancora;
+            } else {
+                $reservaM = Reserva::metros($metros);
+                if ($reservaM === null || $reservaM <= 0) {
+                    return Resultado::erro('FTTH-SYS-002', ['campo' => 'reserva_m'],
+                        'Informe os metros da reserva (até ' . Reserva::MAX_METROS . ' m).');
+                }
+            }
+        } else {
+            $vaoId = null;
+            $reservaM = null;
+        }
+        $vaoAntigo = $antes['vao_id'] !== null ? (int) $antes['vao_id'] : null;
+
+        return Db::transacao(function () use ($id, $nome, $tipo, $cor, $campos, $versao, $usuario, $antes,
+                                              $lat, $lng, $vaoId, $reservaM, $vaoAntigo) {
             if (!Versao::avancar('caixa', $id, $versao, $usuario)) {
                 return Resultado::erro('FTTH-CONC-001',
                     ['entidade' => 'caixa', 'id' => $id, 'versao_atual' => Versao::atual('caixa', $id)]);
             }
             Db::exec(
-                'UPDATE tab_ftth_caixa SET nome = ?, tipo = ?, cor = ?, capacidade = ?, observacao = ?
+                'UPDATE tab_ftth_caixa SET nome = ?, tipo = ?, cor = ?, capacidade = ?, observacao = ?,
+                        lat = ?, lng = ?, vao_id = ?, reserva_m = ?
                   WHERE id = ?',
                 [$nome, $tipo, $cor,
                  array_key_exists('capacidade', $campos) ? $campos['capacidade'] : $antes['capacidade'],
                  array_key_exists('observacao', $campos) ? $campos['observacao'] : $antes['observacao'],
+                 $lat, $lng, $vaoId, $reservaM,
                  $id]
             );
+            foreach (array_unique(array_filter([$vaoAntigo, $vaoId])) as $v) {
+                Reserva::recalcularVao((int) $v, $usuario);
+            }
             $depois = Db::um('SELECT * FROM tab_ftth_caixa WHERE id = ?', [$id]);
             Auditoria::registrar('caixa', $id, 'alterar', $antes, $depois, (int) $antes['regiao_id']);
             return Resultado::ok($depois);
@@ -321,6 +397,10 @@ final class Caixa
                     ['entidade' => 'caixa', 'id' => $id, 'versao_atual' => Versao::atual('caixa', $id)]);
             }
             Db::exec('UPDATE tab_ftth_caixa SET excluido_em = NOW() WHERE id = ?', [$id]);
+            // Reserva que sai leva os metros dela embora do comprimento do cabo.
+            if ($antes['tipo'] === 'RESERVA' && $antes['vao_id'] !== null) {
+                Reserva::recalcularVao((int) $antes['vao_id'], $usuario);
+            }
             Auditoria::registrar('caixa', $id, 'excluir', $antes, null, (int) $antes['regiao_id']);
             return Resultado::ok(['id' => $id]);
         });

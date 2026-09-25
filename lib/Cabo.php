@@ -18,6 +18,7 @@ require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Versao.php';
 require_once __DIR__ . '/Auditoria.php';
 require_once __DIR__ . '/Resultado.php';
+require_once __DIR__ . '/Reserva.php';
 require_once __DIR__ . '/Caixa.php';
 require_once __DIR__ . '/Topologia.php';
 
@@ -50,10 +51,16 @@ final class Cabo
         $sequencia = [];
         foreach ($pontos as $p) {
             if (($p['tipo'] ?? '') === 'CAIXA') {
-                $c = Db::um('SELECT id, lat, lng, regiao_id FROM tab_ftth_caixa
+                $c = Db::um('SELECT id, tipo, nome, lat, lng, regiao_id FROM tab_ftth_caixa
                               WHERE id = ? AND excluido_em IS NULL', [(int) ($p['id'] ?? 0)]);
                 if (!$c) {
                     return Resultado::erro('FTTH-TOP-001', ['caixa' => $p['id'] ?? null]);
+                }
+                // Reserva é cabo enrolado em cima de um vão, não ponta de cabo: ela nasce no
+                // meio de um cabo já lançado e nunca recebe um.
+                if ($c['tipo'] === 'RESERVA') {
+                    return Resultado::erro('FTTH-SYS-002', ['caixa' => (int) $c['id']],
+                        '"' . $c['nome'] . '" é uma reserva: ela fica no meio de um cabo e não recebe cabo.');
                 }
                 if ((int) $c['regiao_id'] !== $regiaoId) {
                     return Resultado::erro('FTTH-SYS-002', ['caixa' => (int) $c['id']],
@@ -381,6 +388,12 @@ final class Cabo
         }
 
         return Db::transacao(function () use ($caboId, $usuario, $cabo) {
+            // As reservas são o próprio cabo enrolado: saem junto com ele.
+            Db::exec(
+                'UPDATE tab_ftth_caixa SET excluido_em = NOW(), alterado_por = ?, alterado_em = NOW()
+                  WHERE tipo = "RESERVA" AND excluido_em IS NULL
+                    AND vao_id IN (SELECT id FROM tab_ftth_cabo_vao WHERE cabo_id = ?)',
+                [$usuario, $caboId]);
             Db::exec('UPDATE tab_ftth_cabo_vao SET excluido_em = NOW() WHERE cabo_id = ?', [$caboId]);
             Db::exec('UPDATE tab_ftth_cabo SET excluido_em = NOW() WHERE id = ?', [$caboId]);
             Auditoria::registrar('cabo', $caboId, 'excluir', $cabo, null, (int) $cabo['regiao_id']);
@@ -497,6 +510,10 @@ final class Cabo
         if (!$caixa) {
             return Resultado::erro('FTTH-TOP-001', ['caixa' => $caixaId]);
         }
+        if ($caixa['tipo'] === 'RESERVA') {
+            return Resultado::erro('FTTH-SYS-002', ['caixa' => $caixaId, 'vao' => $vaoId],
+                'Reserva fica em cima do cabo, sem emenda.');
+        }
         if ((int) $caixa['regiao_id'] !== (int) $vao['regiao_id']) {
             return Resultado::erro('FTTH-SYS-002', ['caixa' => $caixaId, 'vao' => $vaoId],
                 'A caixa e o cabo são de regiões diferentes.');
@@ -592,6 +609,10 @@ final class Cabo
             // 6. e o diagrama já abre legível: o cabo que vem do POP à esquerda, o que segue
             // para a rua à direita e espelhado, com as fibras de frente umas para as outras.
             Topologia::organizarEmenda($caixaId, $vaoId, $novoId, $usuario);
+
+            // 7. cada reserva vai para o trecho em que está de fato; a divisão proporcional
+            // acima só vale para vão sem reserva cadastrada, e o recálculo a substitui.
+            Reserva::redistribuir($vaoId, $novoId, $usuario);
 
             Auditoria::registrar('vao', $vaoId, 'quebrar',
                 ['caixa_fim_id' => $caixaFim, 'comprimento_geo' => (float) $vao['comprimento_geo']],
@@ -780,6 +801,10 @@ final class Cabo
                  Geo::comprimentoOptico($metros, $folga, $reserva), $usuario, (int) $v1['id']]
             );
 
+            // As reservas do trecho que sai passam para o que fica (a soma já veio acima).
+            Db::exec('UPDATE tab_ftth_caixa SET vao_id = ?
+                       WHERE tipo = "RESERVA" AND vao_id = ? AND excluido_em IS NULL',
+                     [(int) $v1['id'], (int) $v2['id']]);
             Db::exec('UPDATE tab_ftth_cabo_vao SET excluido_em = NOW(), alterado_por = ?
                        WHERE id = ?', [$usuario, (int) $v2['id']]);
             Db::exec('UPDATE tab_ftth_cabo_vao SET ordem = ordem - 1

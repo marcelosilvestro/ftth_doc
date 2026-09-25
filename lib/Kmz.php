@@ -207,7 +207,8 @@ final class Kmz
                 );
                 $itemId = Db::ultimoId();
 
-                if ($item['tipo_sugerido'] === 'CAIXA') {
+                // Reserva não é âncora de cabo: ela mora no meio de um vão, nunca na ponta.
+                if ($item['tipo_sugerido'] === 'CAIXA' && ($item['subtipo'] ?? '') !== 'RESERVA') {
                     $caixasDoArquivo[] = [
                         'lat' => (float) $item['geometria'][0][0],
                         'lng' => (float) $item['geometria'][0][1],
@@ -242,7 +243,10 @@ final class Kmz
 
     // ------------------------------------------------------------------ apoio
 
-    /** Caixa real (já importada) ou caixa que veio no mesmo arquivo, dentro da tolerância. */
+    /**
+     * Caixa real (já importada) ou caixa que veio no mesmo arquivo, dentro da tolerância.
+     * Reservas ficam de fora dos dois lados: não recebem cabo.
+     */
     private static function caixaMaisProxima(int $regiaoId, array $ponto, array $doArquivo): ?array
     {
         $tolerancia = (float) (Db::valor('SELECT valor FROM tab_ftth_config WHERE chave = "tolerancia_ancora_m"') ?? 3);
@@ -254,7 +258,7 @@ final class Kmz
         $grau = $tolerancia / 111320.0 * 1.5;
         $cands = Db::todos(
             'SELECT id, nome, lat, lng FROM tab_ftth_caixa
-             WHERE regiao_id = ? AND excluido_em IS NULL
+             WHERE regiao_id = ? AND excluido_em IS NULL AND tipo <> "RESERVA"
                AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?',
             [$regiaoId, $lat - $grau, $lat + $grau, $lng - $grau, $lng + $grau]
         );

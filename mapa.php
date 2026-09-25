@@ -12,6 +12,7 @@ require_once __DIR__ . '/lib/Quarentena.php';
 require_once __DIR__ . '/lib/Caixa.php';
 require_once __DIR__ . '/lib/Cabo.php';
 require_once __DIR__ . '/lib/Topologia.php';
+require_once __DIR__ . '/lib/Ajustes.php';
 
 /* ------------------------------------------------------------------ AJAX */
 if (isset($_GET['ajax'])) {
@@ -31,6 +32,59 @@ if (isset($_GET['ajax'])) {
                 ]);
                 $dados['contadores'] = Quarentena::contar($regiaoId);
                 Resultado::ok($dados)->enviar();
+
+            // Regiões: moram no painel lateral do mapa desde 24/09/2026 (antes, regioes.php).
+            // Centro e zoom vêm sempre da vista do mapa, nunca digitados.
+            case 'regioes':
+                Resultado::ok(['regioes' => Regiao::listar()])->enviar();
+
+            case 'regiao_criar':
+                ftth_exigir_csrf();
+                Regiao::criar(
+                    (string) ($_POST['nome'] ?? ''),
+                    (float) ($_POST['lat'] ?? 0),
+                    (float) ($_POST['lng'] ?? 0),
+                    (int) ($_POST['zoom'] ?? 15),
+                    $usuario_logado
+                )->enviar();
+
+            case 'regiao_alterar':
+                ftth_exigir_csrf();
+                $atual = Regiao::obter((int) ($_POST['id'] ?? 0));
+                if (!$atual) {
+                    Resultado::erro('FTTH-TOP-001', [], 'Região não encontrada.')->enviar(404);
+                }
+                // Renomear não mexe no centro; "usar esta vista" não mexe no nome.
+                $comVista = ($_POST['lat'] ?? '') !== '' && ($_POST['lng'] ?? '') !== '';
+                Regiao::alterar(
+                    (int) $atual['id'],
+                    isset($_POST['nome']) ? (string) $_POST['nome'] : (string) $atual['nome'],
+                    $comVista ? (float) $_POST['lat'] : ($atual['lat'] !== null ? (float) $atual['lat'] : null),
+                    $comVista ? (float) $_POST['lng'] : ($atual['lng'] !== null ? (float) $atual['lng'] : null),
+                    $comVista ? (int) ($_POST['zoom'] ?? 15) : (int) $atual['zoom'],
+                    isset($_POST['versao']) && $_POST['versao'] !== '' ? (int) $_POST['versao'] : null,
+                    $usuario_logado
+                )->enviar();
+
+            case 'regiao_excluir':
+                ftth_exigir_csrf();
+                Regiao::excluir(
+                    (int) ($_POST['id'] ?? 0),
+                    isset($_POST['versao']) && $_POST['versao'] !== '' ? (int) $_POST['versao'] : null,
+                    $usuario_logado
+                )->enviar();
+
+            // Aba Ajustes do painel (e o campo da chave na primeira instalação).
+            case 'ajustes':
+                ftth_exigir_csrf();
+                Resultado::ok(Ajustes::salvar($_POST, $usuario_logado))->enviar();
+
+            // Só quando a aba Ajustes abre: não pesa a abertura do mapa.
+            case 'estado':
+                Resultado::ok(Ajustes::estado())->enviar();
+
+            case 'pontos':
+                Resultado::ok(['pontos' => Mapa::pontos((int) ($_GET['regiao'] ?? 0))])->enviar();
 
             case 'buscar':
                 Resultado::ok(['resultados' => Mapa::buscar(
@@ -52,7 +106,7 @@ if (isset($_GET['ajax'])) {
                     (float) ($_POST['lat'] ?? 0),
                     (float) ($_POST['lng'] ?? 0),
                     $usuario_logado,
-                    ['capacidade' => ($_POST['capacidade'] ?? '') !== '' ? (int) $_POST['capacidade'] : null]
+                    ['reserva_m' => $_POST['reserva_m'] ?? null]
                 )->enviar();
 
             // Você soltou a caixa em cima de um cabo? Consulta pura: quem decide emendar é o
@@ -129,8 +183,7 @@ if (isset($_GET['ajax'])) {
                         'nome'       => (string) ($_POST['nome'] ?? ''),
                         'tipo'       => (string) ($_POST['tipo'] ?? ''),
                         'cor'        => (string) ($_POST['cor'] ?? ''),
-                        'capacidade' => ($_POST['capacidade'] ?? '') !== '' ? (int) $_POST['capacidade'] : null,
-                    ],
+                    ] + (isset($_POST['reserva_m']) ? ['reserva_m' => $_POST['reserva_m']] : []),
                     isset($_POST['versao']) ? (int) $_POST['versao'] : null,
                     $usuario_logado
                 )->enviar();
@@ -255,10 +308,13 @@ if (isset($_GET['ajax'])) {
 /* ------------------------------------------------------------------ página */
 $regioes   = [];
 $chave     = '';
+$aj        = ['google_maps_key' => '', 'mapa_tipo' => 'hybrid', 'mapa_rotulo_zoom' => 17,
+              'raio_quebra_cabo_m' => 10];
 $falha     = null;
 try {
     $regioes = Regiao::listar();
     $chave   = (string) Config::get('google_maps_key', '');
+    $aj      = Ajustes::valores();
 } catch (Throwable $e) {
     Log::excecao('mapa.carregar', $e);
     $falha = 'Não foi possível carregar o mapa. FTTH-SYS-001 · ' . Resultado::requestId();
@@ -289,15 +345,16 @@ include('nav/header.php');
                     <strong>Referenciadores HTTP</strong> e libere o endereço deste painel —
                     <code><?= htmlspecialchars(($_SERVER['HTTP_HOST'] ?? 'seu-servidor')) ?>/*</code>.
                     Sem isso o Google recusa a chave e o mapa abre cinza.</li>
-                <li>Cole a chave em <a href="index.php"><strong>Configurações</strong></a> e recarregue
-                    esta página.</li>
+                <li>Cole a chave aqui e salve — a página recarrega sozinha:</li>
             </ol>
+            <div class="ftth-chave-inicial">
+                <input id="chave-inicial" class="ftth-campo" autocomplete="off" spellcheck="false"
+                       placeholder="AIza...">
+                <button class="ftth-btn ftth-btn--pri" id="chave-inicial-salvar">Salvar</button>
+            </div>
+            <div id="chave-inicial-saida"></div>
             <span class="ftth-sub">A chave fica no seu servidor, em <code>tab_ftth_config</code>;
                 o addon não envia nada para fora além das requisições do próprio mapa.</span>
-        </div>
-    <?php elseif (!$regioes): ?>
-        <div class="ftth-aviso">
-            Nenhuma região cadastrada. <a href="regioes.php">Criar a primeira região</a>.
         </div>
     <?php endif; ?>
 
@@ -309,56 +366,147 @@ include('nav/header.php');
         <div class="ftth-modos">
             <button class="ftth-modo ativo" data-modo="navegar"><i class="bi-cursor-fill"></i> Navegar</button>
             <button class="ftth-modo" data-modo="caixa">
-                <i class="bi-geo-alt-fill"></i> Caixa</button>
+                <i class="bi-geo-alt-fill"></i> Ponto</button>
             <button class="ftth-modo" data-modo="cabo">
                 <i class="bi-share-fill"></i> Cabo</button>
             <button class="ftth-modo" data-modo="mover">
                 <i class="bi-arrows-move"></i> Mover</button>
         </div>
 
-        <select id="sel-regiao" class="ftth-campo" style="max-width:170px">
-            <?php foreach ($regioes as $r): ?>
-                <option value="<?= (int) $r['id'] ?>"
-                        data-lat="<?= htmlspecialchars((string) $r['lat']) ?>"
-                        data-lng="<?= htmlspecialchars((string) $r['lng']) ?>"
-                        data-zoom="<?= (int) $r['zoom'] ?>">
-                    <?= htmlspecialchars($r['nome']) ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-
         <div class="ftth-busca">
             <i class="bi-search ftth-busca-icone"></i>
             <input id="busca" class="ftth-campo ftth-busca-campo" autocomplete="off"
-                   placeholder="Buscar caixa, cliente ou coordenada…">
+                   placeholder="Buscar ponto, cliente ou coordenada…">
             <div id="busca-lista" class="ftth-busca-lista"></div>
-        </div>
-
-        <!-- Cinco caixinhas soltas ocupavam meia barra. Agora viram um menu que só abre
-             quando alguém vai mexer nas camadas, e o rótulo diz quantas estão ligadas. -->
-        <div class="ftth-camadas" id="camadas">
-            <button type="button" class="ftth-camadas-botao" id="btn-camadas">
-                <i class="bi-layers-fill"></i> Camadas
-                <span class="ftth-camadas-conta" id="camadas-conta">5</span>
-                <i class="bi-chevron-down ftth-camadas-seta"></i>
-            </button>
-            <div class="ftth-camadas-lista" id="camadas-lista">
-                <label class="ftth-chk"><input type="checkbox" class="cam" value="CTO" checked> CTO</label>
-                <label class="ftth-chk"><input type="checkbox" class="cam" value="CEO" checked> CEO</label>
-                <label class="ftth-chk"><input type="checkbox" class="cam" value="OUTRAS" checked> Outras</label>
-                <label class="ftth-chk"><input type="checkbox" class="cam" value="CABOS" checked> Cabos</label>
-                <label class="ftth-chk"><input type="checkbox" class="cam" value="QUARENTENA" checked> Quarentena</label>
-            </div>
         </div>
 
         <div class="ftth-resumo" id="resumo-mapa"></div>
 
-        <a class="ftth-btn ftth-btn--sec ftth-mapa-config" href="index.php">
-            <i class="bi-gear-fill"></i> Configurações</a>
     </div>
 
-    <div class="ftth-mapa-area">
+    <div class="ftth-mapa-area" id="mapa-area">
         <div id="mapa"></div>
+
+        <!-- Painel lateral (padrão UpperX): regiões e camadas hoje; pontos e o que vier
+             depois ganham aba aqui, em vez de mais botão na barra. Abre por cima do mapa. -->
+        <button type="button" class="ftth-gaveta-aba" id="gaveta-aba" title="Painel">
+            <i class="bi-chevron-right"></i></button>
+        <aside class="ftth-gaveta" id="gaveta">
+            <nav class="ftth-gaveta-abas">
+                <button type="button" class="ftth-gaveta-tab ativo" data-aba="regioes">
+                    <i class="bi-map"></i><span>Regiões</span></button>
+                <button type="button" class="ftth-gaveta-tab" data-aba="pontos">
+                    <i class="bi-geo-alt"></i><span>Pontos</span></button>
+                <button type="button" class="ftth-gaveta-tab" data-aba="camadas">
+                    <i class="bi-layers"></i><span>Camadas <b id="camadas-conta">5</b></span></button>
+                <button type="button" class="ftth-gaveta-tab" data-aba="ajustes">
+                    <i class="bi-gear"></i><span>Ajustes</span></button>
+            </nav>
+
+            <section class="ftth-gaveta-corpo" data-aba="regioes">
+                <div class="ftth-gaveta-lista" id="lista-regioes"></div>
+                <div class="ftth-gaveta-rodape">
+                    <button type="button" class="ftth-btn ftth-btn--pri ftth-gaveta-acao" id="regiao-nova">
+                        <i class="bi-plus-circle-fill"></i> Nova região</button>
+                </div>
+            </section>
+
+            <!-- Lista da região inteira, não só da área visível. O filtro vale também no mapa:
+                 o que não atende fica translúcido, para não se perder a noção de onde se está. -->
+            <section class="ftth-gaveta-corpo" data-aba="pontos" style="display:none">
+                <div class="ftth-gaveta-topo">
+                    <div class="ftth-busca ftth-gaveta-busca">
+                        <i class="bi-search ftth-busca-icone"></i>
+                        <input id="pontos-busca" class="ftth-campo ftth-busca-campo" autocomplete="off"
+                               placeholder="Buscar ponto pelo nome…">
+                    </div>
+                    <div class="ftth-filtros" id="pontos-filtros">
+                        <button type="button" class="ftth-filtro ativo" data-filtro="todos">Todos</button>
+                        <button type="button" class="ftth-filtro" data-filtro="sem_sinal"
+                                title="CTO e CEO sem caminho óptico até uma porta de DIO com equipamento">
+                            Sem sinal <b id="conta-sem-sinal"></b></button>
+                        <button type="button" class="ftth-filtro" data-filtro="sem_splitter"
+                                title="CTO e CEO sem nenhum splitter, de atendimento ou de derivação">
+                            Sem splitter <b id="conta-sem-splitter"></b></button>
+                    </div>
+                </div>
+                <div class="ftth-gaveta-lista" id="lista-pontos"></div>
+            </section>
+
+            <section class="ftth-gaveta-corpo" data-aba="camadas" style="display:none">
+                <div class="ftth-gaveta-lista">
+                    <p class="ftth-gaveta-secao">Mostrar no mapa</p>
+                    <label class="ftth-gaveta-opcao"><input type="checkbox" class="cam" value="CTO" checked> CTO</label>
+                    <label class="ftth-gaveta-opcao"><input type="checkbox" class="cam" value="CEO" checked> CEO</label>
+                    <label class="ftth-gaveta-opcao"><input type="checkbox" class="cam" value="OUTRAS" checked>
+                        Outros pontos <small>DC/POP, prédio, problema, reserva</small></label>
+                    <label class="ftth-gaveta-opcao"><input type="checkbox" class="cam" value="CABOS" checked> Cabos</label>
+                    <label class="ftth-gaveta-opcao"><input type="checkbox" class="cam" value="QUARENTENA" checked>
+                        Quarentena <small>itens importados ainda não revisados</small></label>
+                </div>
+            </section>
+            <!-- Ajustes: valem para todos os usuários do painel. O estado do banco só é lido
+                 quando a aba abre. -->
+            <section class="ftth-gaveta-corpo" data-aba="ajustes" style="display:none">
+                <div class="ftth-gaveta-lista">
+                    <p class="ftth-gaveta-secao">Ajustes do mapa</p>
+                    <div class="ftth-ajustes">
+                        <label class="ftth-rotulo-campo" for="aj-chave">Chave do Google Maps</label>
+                        <input id="aj-chave" class="ftth-campo" autocomplete="off" spellcheck="false"
+                               placeholder="AIza..." value="<?= htmlspecialchars($aj['google_maps_key']) ?>">
+
+                        <label class="ftth-rotulo-campo" for="aj-tipo">Tipo de mapa</label>
+                        <select id="aj-tipo" class="ftth-campo">
+                            <?php foreach (Ajustes::TIPOS_MAPA as $v => $r): ?>
+                                <option value="<?= $v ?>" <?= $aj['mapa_tipo'] === $v ? 'selected' : '' ?>><?= $r ?></option>
+                            <?php endforeach; ?>
+                        </select>
+
+                        <div class="ftth-ajustes-par">
+                            <div>
+                                <label class="ftth-rotulo-campo" for="aj-zoom">Zoom do rótulo</label>
+                                <input id="aj-zoom" class="ftth-campo" type="number" min="3" max="21"
+                                       value="<?= (int) $aj['mapa_rotulo_zoom'] ?>">
+                            </div>
+                            <div title="Distância em que o mapa oferece emendar a caixa no cabo">
+                                <label class="ftth-rotulo-campo" for="aj-raio">Raio de emenda (m)</label>
+                                <input id="aj-raio" class="ftth-campo" type="number" min="1" max="100"
+                                       value="<?= (int) $aj['raio_quebra_cabo_m'] ?>">
+                            </div>
+                        </div>
+
+                        <button type="button" class="ftth-btn ftth-btn--pri ftth-gaveta-acao" id="aj-salvar">
+                            <i class="bi-check-circle-fill"></i> Salvar</button>
+                        <p class="ftth-sub" style="margin:8px 0 0">
+                            A chave vem do console do Google (Maps JavaScript API) e deve ser
+                            <strong>restrita por domínio</strong> ao endereço deste painel.</p>
+                        <div id="aj-saida"></div>
+                    </div>
+
+                    <p class="ftth-gaveta-secao" style="margin-top:16px">Dados</p>
+                    <a class="ftth-btn ftth-btn--sec ftth-gaveta-acao" href="importar.php">
+                        <i class="bi-box-seam"></i> Importar KMZ</a>
+                </div>
+
+                <div class="ftth-gaveta-rodape ftth-estado" id="estado-banco">
+                    <p class="ftth-gaveta-vazio" style="padding:0">Lendo o estado do banco…</p>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Nova região, passo 2: o centro é a vista do mapa, então o usuário leva o mapa até
+             lá antes de gravar. Assim a região nunca nasce no lugar errado sem ninguém ver. -->
+        <div id="regiao-card" class="ftth-flutuante" style="display:none">
+            <div class="ftth-flutuante-info">
+                <strong><i class="bi-map"></i> Nova região</strong>
+                <span id="regiao-card-nome"></span>
+                <span class="ftth-flutuante-dica">Posicione o mapa onde fica a região e confirme.</span>
+            </div>
+            <button class="ftth-btn ftth-btn--sec" id="regiao-card-cancelar">
+                <i class="bi-x-octagon-fill"></i> Cancelar</button>
+            <button class="ftth-btn ftth-btn--pri" id="regiao-card-confirmar">
+                <i class="bi-check-circle-fill"></i> Confirmar</button>
+        </div>
         <div id="painel" class="ftth-painel" style="display:none">
             <button class="ftth-painel-fechar" id="painel-fechar">&times;</button>
             <div id="painel-conteudo"></div>
@@ -373,6 +521,9 @@ include('nav/header.php');
                      usuário. Fica aqui, onde o olho já está enquanto ele desenha. -->
                 <span id="cabo-dica" class="ftth-flutuante-dica"></span>
             </div>
+            <!-- Reabre a configuração sem perder o que já foi desenhado. -->
+            <button type="button" class="ftth-flutuante-icone" id="cabo-config" title="Configuração do cabo">
+                <i class="bi-sliders"></i></button>
             <button class="ftth-btn ftth-btn--sec" id="cabo-cancelar" title="Descartar o traçado e sair do modo Cabo">
                 <i class="bi-x-octagon-fill"></i> Cancelar</button>
             <button class="ftth-btn ftth-btn--sec" id="cabo-desfazer">
@@ -387,9 +538,12 @@ include('nav/header.php');
             <div class="ftth-flutuante-info">
                 <strong><i class="bi-arrows-move"></i> Modo edição</strong>
                 <span id="mover-dica" class="ftth-flutuante-dica">
-                    Arraste uma caixa. Clique num cabo para editar o traçado.</span>
+                    Arraste um ponto. Clique num cabo para editar o traçado.</span>
             </div>
             <span class="ftth-flutuante-conta" id="mover-conta">nada alterado</span>
+            <!-- Só em tela estreita: a dica longa sai do card e fica a um toque. -->
+            <button type="button" class="ftth-flutuante-ajuda" id="mover-ajuda" title="Como editar">
+                <i class="bi-question-circle"></i></button>
             <button class="ftth-btn ftth-btn--sec" id="mover-descartar"
                     title="Descartar as alterações e sair do modo edição">
                 <i class="bi-x-octagon-fill"></i> Cancelar</button>
@@ -400,10 +554,12 @@ include('nav/header.php');
 </div>
 
 <!-- Modal de lançar cabo: abre DEPOIS do traçado, como no UpperX -->
+<!-- Modo Cabo, passo 1: configura aqui, depois desenha no mapa (desde 24/09/2026; antes era
+     o inverso). O Finalizar do traçado grava direto com o que está neste popup. -->
 <div id="modal-cabo" class="ftth-modal" style="display:none">
     <div class="ftth-modal-caixa">
         <div class="ftth-modal-topo">
-            <strong><i class="bi-share-fill"></i> Lançar cabo</strong>
+            <strong><i class="bi-share-fill"></i> <span id="cabo-modal-titulo">Novo cabo</span></strong>
             <button class="ftth-painel-fechar" id="cabo-modal-fechar">&times;</button>
         </div>
         <div class="ftth-modal-corpo">
@@ -449,7 +605,7 @@ include('nav/header.php');
         </div>
         <div class="ftth-modal-rodape">
             <button class="ftth-btn ftth-btn--sec" id="cb-cancelar">Cancelar</button>
-            <button class="ftth-btn ftth-btn--pri" id="cb-salvar">Criar cabo</button>
+            <button class="ftth-btn ftth-btn--pri" id="cb-salvar">Desenhar</button>
         </div>
     </div>
 </div>
@@ -458,16 +614,21 @@ include('nav/header.php');
 <div id="modal-caixa" class="ftth-modal" style="display:none">
     <div class="ftth-modal-caixa">
         <div class="ftth-modal-topo">
-            <strong><i class="bi-geo-alt-fill"></i> <span id="modal-titulo">Nova caixa</span></strong>
+            <strong><i class="bi-geo-alt-fill"></i> <span id="modal-titulo">Novo ponto</span></strong>
             <button class="ftth-painel-fechar" id="modal-fechar">&times;</button>
         </div>
         <div class="ftth-modal-corpo">
             <p class="ftth-sub" id="nc-ponto" style="margin:0 0 4px"></p>
 
-            <label class="ftth-rotulo-campo">Nome da caixa</label>
+            <label class="ftth-rotulo-campo">Nome do ponto</label>
             <input id="nc-nome" class="ftth-campo" style="width:100%" maxlength="80">
+            <!-- Junto do nome porque é sobre ele: o próximo ponto nasce com o número seguinte.
+                 Só CTO, CEO e Reserva, que se lançam em sequência pela rua. -->
+            <label class="ftth-chk" id="nc-sequencia-area" style="display:block;margin-top:6px">
+                <input type="checkbox" id="nc-sequencia"> continuar adicionando (numera sozinho)
+            </label>
 
-            <label class="ftth-rotulo-campo">Tipo de estrutura</label>
+            <label class="ftth-rotulo-campo">Tipo de ponto</label>
             <div class="ftth-tipos">
                 <?php foreach (Caixa::ROTULOS as $valor => $rotulo): ?>
                     <button type="button" class="ftth-tipo<?= $valor === 'CTO' ? ' ativo' : '' ?>"
@@ -491,18 +652,42 @@ include('nav/header.php');
                 <?php endforeach; ?>
             </div>
 
-            <label class="ftth-rotulo-campo">Capacidade (portas de atendimento, opcional)</label>
-            <input id="nc-capacidade" class="ftth-campo" type="number" min="1" max="128" placeholder="8">
+            <div id="nc-reserva-area" style="display:none">
+                <label class="ftth-rotulo-campo">Metros de reserva</label>
+                <input id="nc-reserva" class="ftth-campo" type="number" min="1" max="2000" step="0.5"
+                       placeholder="ex.: 30" style="max-width:140px">
+                <div class="ftth-sub" style="margin-top:4px">
+                    Somados ao comprimento óptico do cabo em que a reserva está.
+                </div>
+            </div>
 
-            <label class="ftth-chk" id="nc-sequencia-area" style="display:block;margin-top:10px">
-                <input type="checkbox" id="nc-sequencia"> continuar adicionando (numera sozinho)
-            </label>
 
             <div id="nc-saida"></div>
         </div>
         <div class="ftth-modal-rodape">
             <button class="ftth-btn ftth-btn--sec" id="nc-cancelar">Cancelar</button>
-            <button class="ftth-btn ftth-btn--pri" id="nc-criar">Criar caixa</button>
+            <button class="ftth-btn ftth-btn--pri" id="nc-criar">Criar ponto</button>
+        </div>
+    </div>
+</div>
+
+<!-- Nome da região: criar (passo 1) e renomear usam o mesmo modal. -->
+<div id="modal-regiao" class="ftth-modal" style="display:none">
+    <div class="ftth-modal-caixa">
+        <div class="ftth-modal-topo">
+            <strong><i class="bi-map"></i> <span id="rg-titulo">Nova região</span></strong>
+            <button class="ftth-painel-fechar" id="rg-fechar">&times;</button>
+        </div>
+        <div class="ftth-modal-corpo">
+            <label class="ftth-rotulo-campo">Nome da região</label>
+            <input id="rg-nome" class="ftth-campo" style="width:100%" maxlength="80"
+                   placeholder="ex.: Palmital">
+            <p class="ftth-sub" id="rg-nota" style="margin:8px 0 0"></p>
+            <div id="rg-saida"></div>
+        </div>
+        <div class="ftth-modal-rodape">
+            <button class="ftth-btn ftth-btn--sec" id="rg-cancelar">Cancelar</button>
+            <button class="ftth-btn ftth-btn--pri" id="rg-salvar">Continuar</button>
         </div>
     </div>
 </div>
@@ -638,9 +823,8 @@ include('nav/header.php');
 window.FTTH_MAPA = {
     csrf:   <?= json_encode(ftth_csrf_token()) ?>,
     regiao: <?= $regiaoInicial ? (int) $regiaoInicial['id'] : 0 ?>,
-    lat:    <?= $regiaoInicial && $regiaoInicial['lat'] !== null ? (float) $regiaoInicial['lat'] : -24.8847 ?>,
-    lng:    <?= $regiaoInicial && $regiaoInicial['lng'] !== null ? (float) $regiaoInicial['lng'] : -52.2093 ?>,
-    zoom:   <?= $regiaoInicial ? (int) $regiaoInicial['zoom'] : 15 ?>,
+    // Todas as regiões, com a moldura dos pontos: o mapa se posiciona por elas.
+    regioes: <?= json_encode($regioes, JSON_UNESCAPED_UNICODE) ?>,
     tipo:   <?= json_encode((string) Config::get('mapa_tipo', 'hybrid')) ?>,
     rotulo_zoom:   <?= (int) Config::num('mapa_rotulo_zoom', 17) ?>,
     cabo_espessura:   <?= (int) Config::num('mapa_cabo_espessura', 5) ?>,

@@ -1,10 +1,10 @@
 <?php
 /**
- * ftth_doc :: tela de configuracoes e estado do addon.
+ * ftth_doc :: indicadores da planta e do cadastro nativo.
  *
- * A tela principal do addon e o mapa (mapa.php); daqui se chega pelo botao Configuracoes
- * do mapa e se volta por Voltar. Mostra os indicadores da planta, o que o cadastro nativo
- * ja tem preenchido e o acesso as demais telas.
+ * A tela principal do addon e o mapa (mapa.php). Ajustes, importacao e estado do banco
+ * moram na aba Ajustes do painel do mapa desde 24/09/2026; aqui ficaram so os indicadores,
+ * sem link a partir do mapa, ate virarem o dashboard.
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/lib/Schema.php';
@@ -14,10 +14,6 @@ if (isset($_GET['ajax'])) {
     try {
         if ($_GET['ajax'] === 'resumo') {
             Resultado::ok(ftth_resumo())->enviar();
-        }
-        if ($_GET['ajax'] === 'salvar_ajustes') {
-            ftth_exigir_csrf();
-            Resultado::ok(ftth_salvar_ajustes())->enviar();
         }
         Resultado::erro('FTTH-SYS-002')->enviar(400);
     } catch (Throwable $e) {
@@ -68,41 +64,6 @@ function ftth_resumo(): array
     return $dados;
 }
 
-/**
- * Grava os ajustes da tela. Só as chaves que a tela oferece: uma lista fixa evita que um POST
- * forjado escreva qualquer coisa em tab_ftth_config — inclusive os interruptores de escrita
- * em tabela nativa, que continuam só por SQL, de propósito.
- */
-function ftth_salvar_ajustes(): array
-{
-    global $usuario_logado;
-
-    $tipos = ['roadmap', 'satellite', 'hybrid', 'terrain'];
-    $salvas = [];
-
-    if (isset($_POST['google_maps_key'])) {
-        Config::set('google_maps_key', trim((string) $_POST['google_maps_key']), $usuario_logado);
-        $salvas[] = 'google_maps_key';
-    }
-    if (isset($_POST['mapa_tipo'])) {
-        $tipo = in_array($_POST['mapa_tipo'], $tipos, true) ? (string) $_POST['mapa_tipo'] : 'hybrid';
-        Config::set('mapa_tipo', $tipo, $usuario_logado);
-        $salvas[] = 'mapa_tipo';
-    }
-    if (isset($_POST['mapa_rotulo_zoom'])) {
-        $zoom = max(3, min(21, (int) $_POST['mapa_rotulo_zoom']));
-        Config::set('mapa_rotulo_zoom', (string) $zoom, $usuario_logado);
-        $salvas[] = 'mapa_rotulo_zoom';
-    }
-    if (isset($_POST['raio_quebra_cabo_m'])) {
-        $raio = max(1, min(100, (int) $_POST['raio_quebra_cabo_m']));
-        Config::set('raio_quebra_cabo_m', (string) $raio, $usuario_logado);
-        $salvas[] = 'raio_quebra_cabo_m';
-    }
-
-    return ['salvas' => $salvas];
-}
-
 $schema  = new Schema(__DIR__ . '/sql');
 $estado  = ['instalado' => false, 'faltando' => [], 'aposentadas' => [], 'ledger' => ['baseline' => null, 'legados' => 0]];
 $resumo  = [];
@@ -129,14 +90,13 @@ include('nav/header.php');
 <?php include('../../topo.php'); ?>
 
 <div class="ftth-wrap">
-    <h1 class="ftth-titulo">FTTH Doc — configurações</h1>
+    <h1 class="ftth-titulo">FTTH Doc — indicadores</h1>
     <p class="ftth-sub">Documentação e inteligência operacional da rede óptica.</p>
 
     <!-- A tela principal do addon é o mapa: daqui só se volta para ele. -->
     <div class="ftth-acoes-topo">
         <a class="ftth-btn ftth-btn--pri" href="mapa.php"><i class="bi-arrow-left"></i> Voltar</a>
         <span class="ftth-acoes-sep"></span>
-        <a class="ftth-btn ftth-btn--sec" href="regioes.php"><i class="bi-geo-fill"></i> Regiões</a>
         <a class="ftth-btn ftth-btn--sec" href="importar.php"><i class="bi-box-seam"></i> Importar KMZ</a>
     </div>
 
@@ -239,126 +199,8 @@ include('nav/header.php');
         </div>
     </div>
     <?php endif; ?>
-
-    <!-- Ajustes: sem esta tela, a chave do Google Maps só entraria por SQL no banco. -->
-    <div class="ftth-duplo ftth-duplo--3por2">
-        <div>
-            <div class="ftth-card">
-                <div class="ftth-card-topo">
-                    <h2><i class="bi-gear-fill"></i> Ajustes</h2>
-                    <span class="ftth-sub" style="margin:0">Valem para todos os usuários do painel.</span>
-                </div>
-                <div class="ftth-form-linha">
-                    <div class="ftth-form-campo" style="flex:1 1 320px">
-                        <label for="f-maps">Chave do Google Maps</label>
-                        <input id="f-maps" class="ftth-campo" autocomplete="off" spellcheck="false"
-                               placeholder="AIza..." value="<?= htmlspecialchars((string) Config::get('google_maps_key', '')) ?>">
-                    </div>
-                    <div class="ftth-form-campo ftth-form-campo--md">
-                        <label for="f-tipo">Tipo de mapa</label>
-                        <select id="f-tipo" class="ftth-campo">
-                            <?php foreach (['hybrid' => 'Híbrido', 'satellite' => 'Satélite',
-                                            'roadmap' => 'Ruas', 'terrain' => 'Relevo'] as $v => $r): ?>
-                                <option value="<?= $v ?>" <?= (string) Config::get('mapa_tipo', 'hybrid') === $v ? 'selected' : '' ?>>
-                                    <?= $r ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="ftth-form-campo ftth-form-campo--sm">
-                        <label for="f-zoom">Zoom do rótulo</label>
-                        <input id="f-zoom" class="ftth-campo" type="number" min="3" max="21"
-                               value="<?= (int) Config::num('mapa_rotulo_zoom', 17) ?>">
-                    </div>
-                    <div class="ftth-form-campo ftth-form-campo--sm"
-                         title="Distância em que o mapa oferece emendar a caixa no cabo">
-                        <label for="f-raio">Raio de emenda (m)</label>
-                        <input id="f-raio" class="ftth-campo" type="number" min="1" max="100"
-                               value="<?= (int) Config::num('raio_quebra_cabo_m', 10) ?>">
-                    </div>
-                    <div class="ftth-form-acoes">
-                        <button class="ftth-btn ftth-btn--pri" id="btn-ajustes">Salvar</button>
-                    </div>
-                </div>
-                <p class="ftth-sub ftth-card-nota">
-                    A chave vem do console do Google (Maps JavaScript API) e deve ser
-                    <strong>restrita por domínio</strong> ao endereço deste painel. Sem ela o mapa não abre.
-                </p>
-                <div id="saida-ajustes"></div>
-            </div>
-        </div>
-
-        <div>
-            <div class="ftth-card">
-                <div class="ftth-card-topo">
-                    <h2><i class="bi-hdd-network-fill"></i> Estado do banco</h2>
-                    <span class="ftth-selo <?= empty($estado['faltando']) ? 'ftth-selo--ok' : 'ftth-selo--erro' ?>">
-                        <?= empty($estado['faltando']) ? 'completo' : 'incompleto' ?></span>
-                </div>
-                <table class="ftth-tabela">
-                    <tr>
-                        <td>Tabelas do addon</td>
-                        <td class="mono"><?= count($estado['tabelas'] ?? []) ?> de <?= count(Schema::TABELAS) ?></td>
-                    </tr>
-                    <tr>
-                        <td>Schema aplicado</td>
-                        <td class="mono">
-                            <?php if (!empty($estado['ledger']['baseline'])): ?>
-                                versão <?= htmlspecialchars((string) $estado['ledger']['baseline']['versao']) ?>
-                                em <?= htmlspecialchars(substr((string) $estado['ledger']['baseline']['executed_at'], 0, 16)) ?>
-                            <?php else: ?>
-                                —
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Versão do addon</td>
-                        <td class="mono"><?= htmlspecialchars(isset($Manifest->{'version'}) ? (string) $Manifest->{'version'} : '—') ?></td>
-                    </tr>
-                    <?php if (!empty($estado['aposentadas'])): ?>
-                    <tr>
-                        <td>Tabelas aposentadas</td>
-                        <td class="mono"><?= count($estado['aposentadas']) ?> a remover</td>
-                    </tr>
-                    <?php endif; ?>
-                </table>
-                <p class="ftth-sub ftth-card-nota">
-                    Banco e arquivos são atualizados pelo instalador, no terminal do servidor:
-                    <code>wget -O - <?= htmlspecialchars(FTTH_URL_INSTALADOR) ?> | bash</code>
-                </p>
-            </div>
-        </div>
-    </div>
 </div>
 
-<script>
-(function () {
-    // Único formulário desta tela. O CSRF é o mesmo do resto do addon; sem ele o endpoint recusa.
-    var CSRF = <?= json_encode(ftth_csrf_token()) ?>;
-
-    $('#btn-ajustes').on('click', function () {
-        var $b = $(this).prop('disabled', true);
-        // chamar() devolve a promise do jQuery: o always() reabilita o botao nos dois desfechos.
-        FTTH.chamar({
-            url: 'index.php?ajax=salvar_ajustes',
-            method: 'POST',
-            data: {
-                csrf: CSRF,
-                google_maps_key: $('#f-maps').val(),
-                mapa_tipo: $('#f-tipo').val(),
-                mapa_rotulo_zoom: $('#f-zoom').val(),
-                raio_quebra_cabo_m: $('#f-raio').val()
-            },
-            onOk: function () {
-                $('#saida-ajustes').html('<div class="ftth-aviso ftth-aviso--ok">Ajustes salvos. '
-                    + 'Recarregue o mapa para ver o efeito.</div>');
-            },
-            onErro: function (m) {
-                $('#saida-ajustes').html('<div class="ftth-aviso ftth-aviso--erro">' + FTTH.esc(m) + '</div>');
-            }
-        }).always(function () { $b.prop('disabled', false); });
-    });
-})();
-</script>
 
 <?php include('../../baixo.php'); ?>
 
