@@ -52,17 +52,62 @@
 .ftth-aviso--erro { border-left-color: var(--ftth-vermelho); background: #FEF6F5; }
 .ftth-aviso--ok   { border-left-color: var(--ftth-verde);    background: #F3FBF6; }
 
-/* Aviso que ensina um caminho, em vez de so reclamar: usado quando falta a chave do Maps. */
-.ftth-aviso--passos ol { margin: 8px 0 6px; padding-left: 20px; }
-.ftth-aviso--passos li { margin-bottom: 5px; line-height: 1.45; }
-.ftth-aviso--passos code { background: rgba(0,0,0,.05); padding: 1px 4px; border-radius: 3px; }
-.ftth-aviso--passos .ftth-sub { display: block; margin: 6px 0 0; }
 
 /* ---------------------------------------------------------------- telas de configuracao
    Barra de acoes, cabecalho de card, indicadores em grade (index.php) e formulario em
    linha unica (regioes.php). Densidade antes de tudo: o numero e o assunto, nao a moldura. */
 .ftth-acoes-topo  { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; }
 .ftth-acoes-topo .ftth-btn { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+
+/* ---------------------------------------------------------------- importar KMZ
+   Compacta: cada linha que sobra aqui é tabela que o usuário deixa de ver. */
+.ftth-imp .ftth-btn    { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+.ftth-imp .ftth-btn i  { margin: 0; }
+.ftth-imp-cab          { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+.ftth-imp-cab .ftth-titulo { margin: 0 0 2px; }
+.ftth-imp-cab .ftth-titulo i { color: var(--ftth-azul-claro); margin-right: 4px; }
+.ftth-imp-cab .ftth-sub { margin: 0; }
+.ftth-imp .ftth-card   { padding: 12px 14px; margin-bottom: 12px; }
+
+.ftth-imp-envio        { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; }
+.ftth-imp-campo        { display: flex; flex-direction: column; }
+.ftth-imp-campo .ftth-rotulo-campo { margin: 0 0 4px; }
+.ftth-imp-campo select { width: 280px; max-width: 100%; }
+.ftth-imp-arquivo      { font-size: 12.5px; padding: 4px 0; }
+.ftth-imp-chk          { display: inline-flex; align-items: center; gap: 5px; margin: 0;
+                         padding-bottom: 8px; white-space: nowrap; }
+.ftth-imp-chk input    { margin: 0; }
+.ftth-imp-linha        { flex-basis: 100%; margin: 0; }
+.ftth-imp-linha:empty  { display: none; }
+.ftth-imp-linha .ftth-aviso, #saida-lote .ftth-aviso { margin: 0 0 8px; }
+.ftth-imp-envio .ftth-imp-linha .ftth-aviso { margin: 0; }
+
+.ftth-imp-topo         { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+                         margin-bottom: 10px; }
+.ftth-imp-topo h2      { margin: 0; }
+.ftth-imp-contadores   { display: flex; flex-wrap: wrap; gap: 4px; }
+.ftth-imp-barra        { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+                         margin-bottom: 8px; }
+.ftth-imp-lote         { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.ftth-imp-lote .ftth-sub { margin: 0; }
+.ftth-imp-lote .ftth-imp-chk { padding: 0; }
+.ftth-imp-lote .ftth-btn { padding: 6px 12px; font-size: 12.5px; }
+
+/* Abas em grupo segmentado: a ativa é a única azul. */
+.ftth-imp-abas         { display: inline-flex; border: 1px solid var(--ftth-borda); border-radius: 5px;
+                         overflow: hidden; }
+.ftth-imp-abas button  { border: 0; background: #fff; color: var(--ftth-texto); cursor: pointer;
+                         font-size: 12.5px; font-weight: 600; padding: 6px 14px; }
+.ftth-imp-abas button + button { border-left: 1px solid var(--ftth-borda); }
+.ftth-imp-abas button:hover:not(.ativo) { color: var(--ftth-azul); background: var(--ftth-fundo); }
+.ftth-imp-abas button.ativo { background: var(--ftth-azul); color: #fff; }
+
+.ftth-imp-tabela       { max-height: calc(100vh - 330px); min-height: 160px; overflow: auto;
+                         border-top: 1px solid var(--ftth-borda); }
+.ftth-imp-tabela th    { position: sticky; top: 0; background: #fff; z-index: 1; }
+.ftth-imp .ftth-tabela td, .ftth-imp .ftth-tabela th { padding: 5px 8px; }
+.ftth-imp-acoes        { white-space: nowrap; text-align: right; }
+.ftth-imp-acoes .ftth-btn { padding: 3px 10px; font-size: 12px; }
 .ftth-acoes-sep   { width: 1px; align-self: stretch; background: var(--ftth-borda); margin: 0 2px; }
 .ftth-btn--sec:hover { border-color: var(--ftth-azul-claro); background: var(--ftth-fundo); }
 
@@ -155,19 +200,31 @@ a.ftth-kpi:hover  { border-color: var(--ftth-azul-claro); background: #fff; }
 .ftth-modo.ativo:hover:not([disabled]) { background: var(--ftth-azul-claro);
                                          border-color: var(--ftth-azul-claro); color: #fff; }
 .ftth-modo[disabled] { opacity: .45; cursor: not-allowed; }
+/* Bloqueado ainda recebe o clique, que explica o motivo (js/mapa.js, aplicarTravas). */
+.ftth-modo.bloqueado,
+.ftth-modo.bloqueado:hover { opacity: .45; cursor: not-allowed; border-color: var(--ftth-borda);
+                             color: var(--ftth-texto); }
 
 /* Região e Camadas moraram na barra até 24/09/2026; hoje estão no painel lateral. Sem o
    nowrap, o texto do modo caía para baixo do ícone e cada botão dobrava de altura. */
 .ftth-modo { white-space: nowrap; }
 
-/* Tela larga, barra numa linha só: a busca fixa à esquerda, os modos no centro (mais perto
-   de onde o olho e o mouse estão) e o resumo encostado em Configurações. A busca não cresce:
-   se ela absorvesse a sobra, não haveria o que dividir entre as duas margens automáticas que
-   centralizam os modos. Abaixo de 1100px a barra quebra linha e nada disto vale. */
+/* A coluna da direita: pílula dos primeiros passos e resumo, lado a lado. */
+.ftth-barra-dir   { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ftth-barra-dir:empty { display: none; }
+
+/* Tela larga, barra numa linha só: a busca à esquerda, os modos no centro (mais perto de
+   onde o olho e o mouse estão) e o resumo à direita. Grid de três colunas, e não margens
+   automáticas: com o resumo vazio (região ainda sem nada) a margem dele sumia junto e os
+   modos iam parar na direita. As colunas das pontas têm a mesma largura, então o centro é o
+   centro da tela, tenha a direita o que tiver. Abaixo de 1100px a barra quebra linha. */
 @media (min-width: 1100px) {
-    .ftth-mapa-barra .ftth-busca       { order: 1; flex: 0 1 320px; }
-    .ftth-mapa-barra .ftth-modos       { order: 2; margin-left: auto; }
-    .ftth-mapa-barra .ftth-resumo      { order: 3; margin-left: auto; }
+    .ftth-mapa-barra { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+                       column-gap: 12px; }
+    .ftth-mapa-barra .ftth-busca    { grid-row: 1; grid-column: 1; justify-self: start;
+                                      width: 320px; max-width: 100%; }
+    .ftth-mapa-barra .ftth-modos    { grid-row: 1; grid-column: 2; }
+    .ftth-mapa-barra .ftth-barra-dir { grid-row: 1; grid-column: 3; justify-self: end; }
 }
 /* Celular: duas linhas — os modos; e a busca, que encolhe, com o resumo e a engrenagem.
    Prefixo .ftth-mapa-barra porque a regra base de .ftth-busca vem depois no arquivo e, com a
@@ -298,15 +355,25 @@ a.ftth-kpi:hover  { border-color: var(--ftth-azul-claro); background: #fff; }
                       font-size: 11.5px; }
 .ftth-estado-dados dt { color: var(--ftth-cinza); }
 .ftth-estado-dados dd { margin: 0; font-family: Consolas, "Courier New", monospace; text-align: right; }
+/* Quem desenvolve, no pé da aba Ajustes: discreto, mas com o WhatsApp a um clique. */
+.ftth-autor         { display: flex; flex-direction: column; gap: 1px; font-size: 12px;
+                      line-height: 1.4; padding: 7px 10px; color: var(--ftth-cinza); }
+.ftth-autor strong  { color: var(--ftth-azul); font-weight: 600; }
+/* Resultado do "Verificar atualização" no rodapé do Estado do banco. */
+.ftth-estado-atualizacao { margin-top: 6px; font-size: 12px; }
+.ftth-estado-atualizacao .ftth-onb-link i { margin-right: 3px; }
+.ftth-estado-ok     { color: var(--ftth-verde); font-weight: 600; }
+.ftth-estado-novo   { color: var(--ftth-azul); }
+.ftth-estado-novo i { color: var(--ftth-amarelo); margin-right: 3px; }
+.ftth-autor a       { color: var(--ftth-verde); font-weight: 600; text-decoration: none;
+                      align-self: flex-start; }
+.ftth-autor a:hover { text-decoration: underline; }
+.ftth-autor a i     { margin-right: 3px; }
 .ftth-estado-cmd    { display: flex; align-items: center; gap: 6px; }
 .ftth-estado-cmd code { flex: 1; min-width: 0; font-size: 10.5px; background: #fff;
                         border: 1px solid var(--ftth-borda); border-radius: 4px; padding: 4px 6px;
                         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Primeira instalação: o campo da chave mora no próprio aviso, porque sem chave não há mapa
-   nem painel onde configurar. */
-.ftth-chave-inicial { display: flex; gap: 8px; max-width: 520px; margin-top: 4px; }
-.ftth-chave-inicial .ftth-campo { flex: 1; min-width: 0; }
 
 /* Filtro ligado: a marca âmbar na aba do painel avisa mesmo com ele fechado — sem isso é
    fácil esquecer o filtro e achar que a rede sumiu. */
@@ -687,3 +754,157 @@ html.ftth-sem-scroll body { overflow: hidden; height: 100%; }
                           padding: 5px 10px; margin-top: 4px;
                           font-size: 12px; font-weight: 600; color: var(--ftth-azul); }
 .ftth-rota-caixa-salto strong { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- primeiros passos
+   O assistente de quem acabou de instalar (js/onboarding.js). Card sobre o mapa para ler e
+   decidir; balão fixo no topo do mapa quando a pessoa precisa mexer nele. */
+
+/* Tipo travado no modal do ponto: sem POP, só o POP se cria. */
+.ftth-tipo[disabled]       { opacity: .4; cursor: not-allowed; }
+.ftth-tipo[disabled]:hover { border-color: var(--ftth-borda); }
+.ftth-trava       { margin: 8px 0 0; color: var(--ftth-azul-claro); }
+.ftth-trava i     { margin-right: 3px; }
+
+/* Sem chave do Google não há mapa: um fundo quadriculado no lugar do retângulo branco. */
+#mapa.ftth-mapa-vazio { background-color: #EEF2F7;
+    background-image: linear-gradient(rgba(46,95,163,.07) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(46,95,163,.07) 1px, transparent 1px);
+    background-size: 32px 32px; }
+
+/* Pílula da barra: reabre o assistente enquanto faltar passo. */
+.ftth-onb-pilula  { display: inline-flex; align-items: center; gap: 6px; flex: none;
+                    border: 1px solid rgba(232,163,23,.55); background: #FFFBF0;
+                    color: #8A6212; border-radius: 16px; padding: 5px 12px;
+                    font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ftth-onb-pilula:hover { background: #FDF3DD; }
+.ftth-onb-pilula b { background: var(--ftth-amarelo); color: #fff; border-radius: 9px;
+                     padding: 1px 7px; font-size: 11px; }
+
+/* Card: cobre só a área do mapa, não a barra nem o menu do MK-AUTH. */
+.ftth-onb         { position: absolute; inset: 0; z-index: 20; display: flex;
+                    align-items: center; justify-content: center; padding: 16px;
+                    background: rgba(16,26,40,.45); border-radius: 6px; }
+.ftth-onb-card    { position: relative; background: #fff; border-radius: 10px; width: 540px;
+                    max-width: 100%; max-height: 100%; overflow: auto;
+                    box-shadow: 0 20px 50px rgba(10,20,35,.35); color: var(--ftth-texto);
+                    animation: ftth-onb-entra .18s ease-out; }
+@keyframes ftth-onb-entra { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.ftth-onb-topo    { padding: 16px 22px 12px; border-bottom: 1px solid var(--ftth-borda);
+                    background: var(--ftth-fundo); border-radius: 10px 10px 0 0; }
+.ftth-onb-selo    { font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+                    letter-spacing: .08em; color: var(--ftth-azul-claro); }
+
+/* Trilha 1-2-3-4-5: feito em verde, atual em azul, o resto apagado. */
+.ftth-onb-trilha  { display: flex; list-style: none; margin: 10px 0 0; padding: 0; }
+.ftth-onb-trilha li { flex: 1; position: relative; display: flex; flex-direction: column;
+                      align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+                      color: var(--ftth-cinza); }
+.ftth-onb-trilha li + li::before { content: ""; position: absolute; top: 12px; right: 50%;
+                                   width: 100%; height: 2px; background: var(--ftth-borda); }
+.ftth-onb-trilha span { position: relative; z-index: 1; width: 26px; height: 26px;
+                        border-radius: 50%; display: flex; align-items: center;
+                        justify-content: center; background: #fff; font-size: 12px;
+                        border: 2px solid var(--ftth-borda); color: var(--ftth-cinza); }
+.ftth-onb-trilha li.feito { color: var(--ftth-verde); }
+.ftth-onb-trilha li.feito span { background: var(--ftth-verde); border-color: var(--ftth-verde);
+                                 color: transparent; }
+.ftth-onb-trilha li.feito span::after { content: "\2713"; position: absolute; color: #fff;
+                                        font-size: 13px; }
+.ftth-onb-trilha li.feito + li::before { background: var(--ftth-verde); }
+.ftth-onb-trilha li.atual { color: var(--ftth-azul); }
+.ftth-onb-trilha li.atual span { background: var(--ftth-azul); border-color: var(--ftth-azul);
+                                 color: #fff; box-shadow: 0 0 0 4px rgba(46,95,163,.18); }
+
+.ftth-onb-passo   { padding: 18px 22px 6px; }
+.ftth-onb-passo h2 { font-size: 17px; font-weight: 600; color: var(--ftth-azul); margin: 0 0 8px; }
+.ftth-onb-passo h2 i { color: var(--ftth-azul-claro); margin-right: 6px; }
+.ftth-onb-passo h2 i.ftth-onb-ok { color: var(--ftth-verde); }
+.ftth-onb-passo p { font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
+.ftth-onb-passo .ftth-aviso { font-size: 12.5px; line-height: 1.5; margin: 0 0 10px; }
+.ftth-onb-passo .ftth-aviso code { background: rgba(0,0,0,.05); padding: 1px 4px; border-radius: 3px; }
+.ftth-onb-linha   { display: flex; gap: 8px; }
+.ftth-onb-linha .ftth-campo { flex: 1; min-width: 0; }
+.ftth-onb-linha .ftth-btn { white-space: nowrap; }
+.ftth-onb-linha .ftth-btn i { margin: 0 0 0 4px; }
+.ftth-onb-linha .ftth-btn i:first-child { margin: 0 4px 0 0; }
+.ftth-onb-acao    { padding: 10px 20px; margin: 4px 0 8px; }
+.ftth-onb-erro    { color: var(--ftth-vermelho); margin: 6px 0 0; }
+.ftth-onb-nota    { margin: 10px 0 8px; }
+
+.ftth-onb-ajuda   { margin-top: 12px; border: 1px solid var(--ftth-borda); border-radius: 6px;
+                    background: var(--ftth-fundo); font-size: 12.5px; }
+.ftth-onb-ajuda summary { cursor: pointer; padding: 9px 12px; font-weight: 600;
+                          color: var(--ftth-azul-claro); }
+.ftth-onb-ajuda ol { margin: 0; padding: 0 14px 10px 32px; }
+.ftth-onb-ajuda li { margin-bottom: 7px; line-height: 1.5; }
+.ftth-onb-copiar  { display: inline-flex; align-items: center; gap: 6px; margin: 2px 0; }
+.ftth-onb-copiar code { background: #fff; border: 1px solid var(--ftth-borda); padding: 3px 6px;
+                        border-radius: 4px; font-size: 12px; color: var(--ftth-vermelho); }
+.ftth-onb-copiar .ftth-btn { padding: 3px 9px; font-size: 11.5px; }
+
+/* A rede em miniatura: POP — cabo — caixa — clientes. */
+.ftth-onb-cadeia  { display: flex; align-items: center; margin: 4px 0 14px; padding: 12px;
+                    background: var(--ftth-fundo); border-radius: 6px; }
+.ftth-onb-no      { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none;
+                    max-width: 110px; font-size: 11px; font-weight: 600; color: var(--ftth-cinza);
+                    text-align: center; overflow: hidden; text-overflow: ellipsis; }
+.ftth-onb-no i    { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center;
+                    justify-content: center; font-size: 17px; background: #fff;
+                    border: 2px dashed #C3CDDA; color: #9AA6B6; }
+.ftth-onb-no.feito i { border: 2px solid var(--ftth-verde); color: var(--ftth-verde); }
+.ftth-onb-no.foco { color: var(--ftth-azul); }
+.ftth-onb-no.foco i { border: 2px solid var(--ftth-azul); background: var(--ftth-azul); color: #fff;
+                      animation: ftth-onb-pulso 1.6s ease-out infinite; }
+.ftth-onb-no--depois { opacity: .55; }
+.ftth-onb-fio     { flex: 1; height: 0; border-top: 3px dashed #C3CDDA; margin: 0 6px 18px; min-width: 18px; }
+.ftth-onb-fio.feito { border-top: 3px solid var(--ftth-verde); }
+.ftth-onb-fio.foco  { border-top: 3px solid var(--ftth-azul-claro); }
+.ftth-onb-fio--depois { opacity: .55; }
+@keyframes ftth-onb-pulso { 0% { box-shadow: 0 0 0 0 rgba(46,95,163,.45); }
+                            100% { box-shadow: 0 0 0 12px rgba(46,95,163,0); } }
+
+.ftth-onb-proximos { display: flex; gap: 10px; margin: 0 0 8px; }
+.ftth-onb-proximo { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 12px;
+                    border: 1px solid var(--ftth-borda); border-radius: 6px; text-decoration: none;
+                    color: var(--ftth-texto); font-size: 12px; line-height: 1.45; }
+.ftth-onb-proximo:hover { border-color: var(--ftth-azul-claro); background: #F7FAFE;
+                          text-decoration: none; }
+.ftth-onb-proximo i { font-size: 18px; color: var(--ftth-azul-claro); }
+.ftth-onb-proximo strong { color: var(--ftth-azul); font-size: 13px; }
+.ftth-onb-proximo span { color: var(--ftth-cinza); }
+
+.ftth-onb-rodape  { display: flex; align-items: center; gap: 12px; padding: 12px 22px 16px; }
+.ftth-onb-contagem { margin-left: auto; font-size: 11.5px; color: var(--ftth-cinza); }
+.ftth-onb-rodape .ftth-btn { margin-left: auto; }
+.ftth-onb-link    { background: none; border: 0; padding: 0; cursor: pointer; font-size: 12.5px;
+                    color: var(--ftth-cinza); text-decoration: underline; text-underline-offset: 2px; }
+.ftth-onb-link:hover { color: var(--ftth-azul); }
+
+/* Balão: abaixo do card flutuante do mapa (Nova região, Traçando cabo), que mora no topo. */
+.ftth-onb-balao   { position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
+                    z-index: 4; display: flex; align-items: center; gap: 12px;
+                    width: max-content; max-width: calc(100% - 32px);
+                    background: #fff; border: 1px solid var(--ftth-borda);
+                    border-left: 4px solid var(--ftth-azul-claro); border-radius: 8px;
+                    padding: 10px 14px; box-shadow: 0 10px 28px rgba(10,20,35,.28); }
+.ftth-onb-balao-num { flex: none; width: 28px; height: 28px; border-radius: 50%;
+                      background: var(--ftth-azul); color: #fff; font-weight: 700; font-size: 13px;
+                      display: flex; align-items: center; justify-content: center;
+                      animation: ftth-onb-pulso 1.6s ease-out infinite; }
+.ftth-onb-balao-texto { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
+.ftth-onb-balao-texto strong { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+                               color: var(--ftth-azul-claro); }
+.ftth-onb-balao-texto span { font-size: 13px; color: var(--ftth-texto); }
+
+@media (max-width: 470px) {
+    .ftth-onb         { padding: 8px; align-items: flex-start; }
+    .ftth-onb-topo    { padding: 12px 14px 10px; }
+    .ftth-onb-passo   { padding: 14px 14px 4px; }
+    .ftth-onb-rodape  { padding: 10px 14px 12px; }
+    .ftth-onb-trilha li { font-size: 10px; }
+    .ftth-onb-linha   { flex-direction: column; }
+    .ftth-onb-proximos { flex-direction: column; }
+    .ftth-onb-no      { max-width: 64px; }
+    .ftth-onb-balao   { top: 12px; }
+}

@@ -4,7 +4,7 @@ Addon para MK-AUTH que documenta a planta FTTH: caixas e cabos no mapa, importa�
 projeto, diagrama de emendas de cada CEO/CTO, POP com OLT e DIO, e cálculo de potência do sinal
 que chega em cada cliente.
 
-> **Versão 0.9.3 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
+> **Versão 0.9.4 — beta.** Está rodando em produção no provedor que o desenvolve, mas é a
 > primeira versão publicada. Instale primeiro num servidor de teste.
 
 ## Instalação
@@ -46,7 +46,7 @@ wget -O - https://raw.githubusercontent.com/marcelosilvestro/ftth_doc/main/insta
 wget -O - .../instalar.sh | bash -s -- --diagnostico
 
 # instalar uma versão específica
-wget -O - .../instalar.sh | bash -s -- --versao=v0.9.3
+wget -O - .../instalar.sh | bash -s -- --versao=v0.9.4
 
 # remover as tabelas que o addon aposentou
 wget -O - .../instalar.sh | bash -s -- --limpar

@@ -17,6 +17,15 @@
     var tracado = [];                           // pontos do cabo sendo desenhado
     var linhaTracado = null, pinosTracado = [];  // desenho provisório
     var caboAberto = null;                       // vão cuja ficha está aberta no painel
+
+    // Primeiros passos (js/onboarding.js). O assistente não mexe no mapa por dentro: ele pede
+    // pelo FTTH_MAPA_API e escuta o evento 'ftth:mudou', disparado a cada mudança de estado.
+    var presetPonto = null;      // {tipo, nome}: o próximo ponto já nasce com tipo e nome
+    var caboDesde = null;        // caixa em que o próximo traçado começa sozinho
+    var pontoEmDestaque = 0;     // marcador que pula: o destino do primeiro cabo
+    // O que a rede já tem, para travar o que ainda não faz sentido (sem POP, só POP; sem duas
+    // caixas, sem cabo). Vale para qualquer usuário, com ou sem o assistente na tela.
+    var travas = { pop: true, ancoras: 2 };
     // Modo Mover: nada vai para o banco antes do Concluir (decisão de 22/09/2026).
     var pendentes = { caixas: {}, vaos: {} };
     var ultimoDesenho = null;                    // último payload, para saber quem toca quem
@@ -128,7 +137,10 @@
      */
     function carregar(soArea) {
         if (!mapa || !regiao) return;
-        if (!soArea) recarregarPontos();
+        if (!soArea) {
+            recarregarPontos();
+            avisarMudanca();
+        }
         var b = mapa.getBounds();
         if (!b) return;
         var ne = b.getNorthEast(), sw = b.getSouthWest();
@@ -140,6 +152,50 @@
             onOk: desenhar,
             onErro: function (m) { $('#resumo-mapa').text(m); }
         });
+    }
+
+    /** Algo mudou na rede ou no modo: quem acompanha (os primeiros passos) confere de novo. */
+    function avisarMudanca() {
+        $(document).trigger('ftth:mudou');
+    }
+
+    /**
+     * Botão de modo que ainda não faz sentido fica apagado com o motivo, e o clique diz o
+     * motivo em vez de não fazer nada. Não usa `disabled`: botão desabilitado não recebe
+     * clique nem mostra a dica em todo navegador, e aí o usuário não descobre o porquê.
+     */
+    function aplicarTravas() {
+        var semRegiao = regiao ? '' : 'Crie uma região primeiro: é nela que os pontos ficam.';
+        var motivos = {
+            caixa: semRegiao,
+            mover: semRegiao,
+            cabo:  semRegiao || (travas.ancoras < 2
+                ? 'Um cabo liga duas caixas: marque o POP e a primeira caixa antes.' : '')
+        };
+        $.each(motivos, function (m, motivo) {
+            $('.ftth-modo[data-modo="' + m + '"]')
+                .toggleClass('bloqueado', !!motivo)
+                .attr('aria-disabled', motivo ? 'true' : 'false')
+                .attr('title', motivo);
+        });
+    }
+
+    /** Escolhe o tipo no modal do ponto e atualiza o pino que já está no mapa. */
+    function selecionarTipo(tipo) {
+        $('.ftth-tipo').removeClass('ativo').filter('[data-tipo="' + tipo + '"]').addClass('ativo');
+        camposDoTipo();
+        if (pinTemporario) pinTemporario.setIcon(icone(tipoSelecionado(), corSelecionada(), true));
+    }
+
+    /**
+     * Sem POP na rede, o único ponto que se cria é o POP: é dele que as fibras saem, e começar
+     * pela CTO deixa o técnico sem ter de onde puxar o primeiro cabo. A edição não trava nada.
+     */
+    function aplicarTravaTipos() {
+        var soPop = !editando && !travas.pop;
+        $('.ftth-tipo').not('[data-tipo="DC"]').prop('disabled', soPop);
+        $('#nc-trava').toggle(soPop);
+        if (soPop && tipoSelecionado() !== 'DC') selecionarTipo('DC');
     }
 
     /** O número no botão diz o que está ligado sem precisar abrir o menu. */
@@ -176,6 +232,10 @@
                     ? { text: c.nome, fontSize: '11px', color: '#22303F', className: 'ftth-rotulo' }
                     : null
             });
+            // O destino do primeiro cabo pula enquanto o traçado não chega nele.
+            if (pontoEmDestaque && Number(c.id) === pontoEmDestaque) {
+                m.setAnimation(google.maps.Animation.BOUNCE);
+            }
             m.addListener('click', function () {
                 // No modo Cabo, clicar numa caixa ancora o traçado nela em vez de abrir a ficha.
                 if (modo === 'cabo') {
@@ -1097,6 +1157,7 @@
         $('#cabo-card').show();
         atualizarTracado();
         ajustarToasts();
+        avisarMudanca();
     }
 
     /**
@@ -1230,7 +1291,11 @@
             return;
         }
         iniciarTracado();
-        FTTH.toast('info', 'Clique na caixa onde o cabo começa.');
+        if (caboDesde) {
+            pontoTracado(caboDesde);             // primeiros passos: o cabo já sai do POP
+        } else {
+            FTTH.toast('info', 'Clique na caixa onde o cabo começa.');
+        }
     }
 
     function salvarCabo() {
@@ -1298,8 +1363,17 @@
             linhas.forEach(function (l) { l.setOptions({ cursor: cursorDoCabo() }); });
         }
 
+        // Os presets dos primeiros passos valem só para o modo que os pediu.
+        if (novo !== 'caixa') presetPonto = null;
+        if (novo !== 'cabo' && (caboDesde || pontoEmDestaque)) {
+            caboDesde = null;
+            pontoEmDestaque = 0;
+            if (ultimoDesenho) desenhar(ultimoDesenho);   // para de pular
+        }
+
         if (novo === 'caixa') {
-            FTTH.toast('info', 'Clique no mapa para marcar o ponto.');
+            // Com o assistente na tela a dica já está no balão; o toast repetiria a frase.
+            if (!presetPonto) FTTH.toast('info', 'Clique no mapa para marcar o ponto.');
         } else if (novo === 'cabo') {
             abrirConfigCabo();          // configura primeiro; o traçado começa no "Desenhar"
         } else if (novo === 'mover') {
@@ -1320,6 +1394,7 @@
             limparTracado();
             $('#modal-cabo').hide();
         }
+        avisarMudanca();
     }
 
     /* ------------------------------------------------------------------ modo Mover */
@@ -1598,6 +1673,7 @@
     function marcarPonto(latLng) {
         limparPin();
         pontoNovo = latLng;
+        if (!travas.pop) selecionarTipo('DC');   // o pino já nasce com a cara do que vai ser
         pinTemporario = new google.maps.Marker({
             position: latLng, map: mapa, zIndex: 999,
             icon: icone(tipoSelecionado(), corSelecionada(), true)
@@ -1652,9 +1728,14 @@
         $('#nc-criar').text('Criar ponto');
         $('#nc-reserva').val('');
         $('#nc-saida').empty();
+        aplicarTravaTipos();
         camposDoTipo();
         $('#modal-caixa').show();
-        sugerirNome('');
+        if (presetPonto && presetPonto.nome) {
+            $('#nc-nome').val(presetPonto.nome);
+        } else {
+            sugerirNome('');
+        }
         setTimeout(function () { $('#nc-nome').trigger('focus').trigger('select'); }, 50);
     }
 
@@ -1672,6 +1753,7 @@
         $('#nc-ponto').text('Ponto: ' + parseFloat(c.lat).toFixed(6) + ', ' + parseFloat(c.lng).toFixed(6)
             + ' — para mudar de lugar, use o modo Mover.');
 
+        aplicarTravaTipos();                      // na edição, destrava tudo
         $('.ftth-tipo').removeClass('ativo');
         var $t = $('.ftth-tipo[data-tipo="' + c.tipo + '"]');
         ($t.length ? $t : $('.ftth-tipo[data-tipo="CTO"]')).addClass('ativo');
@@ -1862,6 +1944,7 @@
         pontosCarregados = false;
         $('#painel').hide();
         renderRegioes();
+        aplicarTravas();
         // Escolheu a região: o painel sai da frente ANTES de enquadrar, para a rede ocupar
         // o mapa inteiro em vez de ser enquadrada no que sobra ao lado dele.
         abrirGaveta(false);
@@ -1908,6 +1991,7 @@
                 regioes = d.regioes || [];
                 renderRegioes();
                 if (depois) depois();
+                avisarMudanca();
             },
             onErro: function (m) { FTTH.toast('erro', m); }
         });
@@ -2108,15 +2192,66 @@
                   +   '<dt>Versão do addon</dt><dd>' + esc(e.addon || '—') + '</dd>'
                   +   (e.aposentadas ? '<dt>Aposentadas</dt><dd>' + e.aposentadas + ' a remover</dd>' : '')
                   + '</dl>'
-                  + '<p class="ftth-sub" style="margin:6px 0 4px">Banco e arquivos são atualizados pelo '
-                  +   'instalador, no terminal do servidor:</p>'
-                  + '<div class="ftth-estado-cmd"><code id="estado-cmd">' + esc(e.instalador) + '</code>'
-                  +   '<button type="button" class="ftth-copiar" id="estado-copiar">copiar</button></div>');
+                  + '<div class="ftth-estado-atualizacao" id="estado-atualizacao">'
+                  +   '<button type="button" class="ftth-onb-link" id="estado-verificar">'
+                  +     '<i class="bi-arrow-repeat"></i> Verificar atualização</button></div>');
+                estadoAtual = e;
             },
             onErro: function (m) {
                 $('#estado-banco').html('<div class="ftth-aviso ftth-aviso--erro">' + esc(m) + '</div>');
             }
         });
+    }
+
+    var estadoAtual = null;   // o último estado lido: versão instalada, instalador, release
+
+    /** "0.9.10" > "0.9.9": compara número a número, não como texto. */
+    function versaoMaior(a, b) {
+        var pa = String(a).replace(/^v/i, '').split('.');
+        var pb = String(b).replace(/^v/i, '').split('.');
+        for (var i = 0; i < Math.max(pa.length, pb.length); i++) {
+            var x = parseInt(pa[i], 10) || 0, y = parseInt(pb[i], 10) || 0;
+            if (x !== y) return x > y;
+        }
+        return false;
+    }
+
+    /**
+     * Pergunta ao GitHub qual é a última release — a mesma que o instalador baixaria. Sai do
+     * navegador, e só quando alguém clica: o servidor do provedor não precisa de internet para
+     * isso, e o addon não fica consultando nada por conta própria.
+     */
+    function verificarAtualizacao() {
+        var e = estadoAtual;
+        var $a = $('#estado-atualizacao');
+        if (!e || !e.ultima_url) return;
+        $a.html('<span class="ftth-sub" style="margin:0"><i class="bi-arrow-repeat"></i> Consultando o GitHub…</span>');
+
+        $.ajax({ url: e.ultima_url, dataType: 'json', timeout: 10000, cache: false })
+            .done(function (r) {
+                var ultima = String((r && r.tag_name) || '').replace(/^v/i, '');
+                if (!ultima) { falhou(); return; }
+                if (!versaoMaior(ultima, e.addon)) {
+                    $a.html('<span class="ftth-estado-ok"><i class="bi-check-circle-fill"></i> '
+                        + 'Você está na versão mais recente (' + esc(e.addon) + ').</span>');
+                    return;
+                }
+                var data = r.published_at ? new Date(r.published_at).toLocaleDateString('pt-BR') : '';
+                $a.html('<div class="ftth-estado-novo"><i class="bi-arrow-up-circle-fill"></i> '
+                    + 'Versão <strong>' + esc(ultima) + '</strong> disponível'
+                    + (data ? ' (' + esc(data) + ')' : '')
+                    + (r.html_url ? ' · <a href="' + esc(r.html_url) + '" target="_blank" rel="noopener">o que mudou</a>' : '')
+                    + '</div>'
+                    + '<p class="ftth-sub" style="margin:4px 0">Para atualizar, rode no terminal do servidor:</p>'
+                    + '<div class="ftth-estado-cmd"><code id="estado-cmd">' + esc(e.instalador) + '</code>'
+                    +   '<button type="button" class="ftth-copiar" id="estado-copiar">copiar</button></div>');
+            })
+            .fail(falhou);
+
+        function falhou() {
+            $a.html('<span class="ftth-sub" style="margin:0">Não foi possível consultar o GitHub agora. '
+                + '<button type="button" class="ftth-onb-link" id="estado-verificar">Tentar de novo</button></span>');
+        }
     }
 
     /**
@@ -2135,13 +2270,12 @@
                 csrf: cfg.csrf,
                 google_maps_key: $('#aj-chave').val(),
                 mapa_tipo: $('#aj-tipo').val(),
-                mapa_rotulo_zoom: $('#aj-zoom').val(),
-                raio_quebra_cabo_m: $('#aj-raio').val()
+                // Sem raio_quebra_cabo_m: o campo saiu da tela, e mandá-lo vazio gravaria 1 m.
+                mapa_rotulo_zoom: $('#aj-zoom').val()
             },
             onOk: function (d) {
                 $('#aj-chave').data('salva', d.google_maps_key);
                 $('#aj-zoom').val(d.mapa_rotulo_zoom);
-                $('#aj-raio').val(d.raio_quebra_cabo_m);
 
                 cfg.rotulo_zoom = d.mapa_rotulo_zoom;
                 if (mapa && d.mapa_tipo !== cfg.tipo) {
@@ -2162,32 +2296,6 @@
             }
         }).always(function () { $b.prop('disabled', false); });
     }
-
-    /* Primeira instalação: sem chave não há mapa, nem painel. O campo mora no próprio aviso. */
-    $(function () {
-        $('#chave-inicial-salvar').on('click', function () {
-            var chave = $.trim($('#chave-inicial').val());
-            if (!chave) {
-                $('#chave-inicial-saida').html('<p class="ftth-sub" style="margin:6px 0 0">Cole a chave.</p>');
-                return;
-            }
-            var $b = $(this).prop('disabled', true);
-            FTTH.chamar({
-                url: 'mapa.php?ajax=ajustes',
-                method: 'POST',
-                data: { csrf: (window.FTTH_MAPA || {}).csrf, google_maps_key: chave },
-                onOk: function () { window.location.reload(); },
-                onErro: function (m) {
-                    $('#chave-inicial-saida').html('<div class="ftth-aviso ftth-aviso--erro" '
-                        + 'style="margin:8px 0 0">' + esc(m) + '</div>');
-                    $b.prop('disabled', false);
-                }
-            });
-        });
-        $('#chave-inicial').on('keydown', function (e) {
-            if (e.key === 'Enter') $('#chave-inicial-salvar').trigger('click');
-        });
-    });
 
     /* Preferência do painel (aberto, aba): conveniência deste navegador, nada além disso. */
     function lerPref(chave) {
@@ -2227,6 +2335,16 @@
         setTimeout(function () { $('#rg-nome').trigger('focus').trigger('select'); }, 50);
     }
 
+    /** Por que este nome não serve ('' = serve). O modal e os primeiros passos usam a mesma regra. */
+    function recusaNomeRegiao(nome, editandoRegiao) {
+        if (!nome) return 'Informe o nome da região.';
+        var repetida = regioes.some(function (x) {
+            return x.nome.toLowerCase() === nome.toLowerCase()
+                && (!editandoRegiao || Number(x.id) !== Number(editandoRegiao.id));
+        });
+        return repetida ? 'Já existe uma região com esse nome.' : '';
+    }
+
     function salvarModalRegiao() {
         var cfg = window.FTTH_MAPA || {};
         var nome = $.trim($('#rg-nome').val());
@@ -2234,12 +2352,8 @@
             $('#rg-saida').html('<div class="ftth-aviso ftth-aviso--erro" style="margin:8px 0 0">'
                 + esc(m) + '</div>');
         };
-        if (!nome) { erro('Informe o nome da região.'); return; }
-        var repetida = regioes.some(function (x) {
-            return x.nome.toLowerCase() === nome.toLowerCase()
-                && (!regiaoEditando || Number(x.id) !== Number(regiaoEditando.id));
-        });
-        if (repetida) { erro('Já existe uma região com esse nome.'); return; }
+        var recusa = recusaNomeRegiao(nome, regiaoEditando);
+        if (recusa) { erro(recusa); return; }
 
         if (!regiaoEditando) {
             $('#modal-regiao').hide();
@@ -2272,13 +2386,18 @@
         $('#regiao-card-nome').text(nome);
         $('#regiao-card').show();
         ajustarToasts();
-        FTTH.toast('info', 'Arraste e aproxime o mapa até ' + nome + ' (ou busque a coordenada) e confirme.');
+        // Com o assistente na tela a dica já está no balão, fixa; o toast sumiria sozinho.
+        if (!$('#onb-balao').is(':visible') && !$('#onb').is(':visible')) {
+            FTTH.toast('info', 'Arraste e aproxime o mapa até ' + nome + ' (ou busque a coordenada) e confirme.');
+        }
+        avisarMudanca();
     }
 
     function encerrarPosicionamento() {
         nomeNovaRegiao = null;
         $('#regiao-card').hide();
         ajustarToasts();
+        avisarMudanca();
     }
 
     function confirmarNovaRegiao() {
@@ -2335,6 +2454,7 @@
                         trocarRegiao(regioes[0].id);
                     } else {
                         regiao = 0;
+                        aplicarTravas();
                         limpar();
                         $('#resumo-mapa').empty();
                         posicionarNaRegiao(null);
@@ -2387,6 +2507,7 @@
 
         // --- aba Ajustes
         $('#aj-salvar').on('click', salvarAjustes);
+        $('#estado-banco').on('click', '#estado-verificar', verificarAtualizacao);
         $('#estado-banco').on('click', '#estado-copiar', function () {
             var texto = $('#estado-cmd').text();
             var $b = $(this);
@@ -2503,8 +2624,16 @@
 
         $('.ftth-modo').on('click', function () {
             if ($(this).prop('disabled')) return;
+            if ($(this).hasClass('bloqueado')) {
+                FTTH.toast('info', $(this).attr('title'));
+                return;
+            }
             definirModo($(this).data('modo'));
         });
+        if (cfg.passos) {
+            travas = { pop: !!cfg.passos.feitos.pop, ancoras: parseInt(cfg.passos.ancoras, 10) || 0 };
+        }
+        aplicarTravas();
 
         // Trocar tipo ou cor atualiza o pino que já está no mapa, para o usuário ver o resultado.
         $(document).on('click', '.ftth-tipo', function () {
@@ -2728,6 +2857,75 @@
             if (!confirm('Descartar este item? Ele não entra na rede.')) return;
             decidirQuarentena(parseInt($(this).data('id'), 10), 'descartar');
         });
+
+        window.FTTH_MAPA_API = api;
+        $(document).trigger('ftth:mapa-pronto');
+    };
+
+    /* ------------------------------------------------------------ primeiros passos
+     *
+     * O que o assistente (js/onboarding.js) pode pedir ao mapa. Ele nunca mexe no estado daqui
+     * por dentro: pede por estas funções e escuta o 'ftth:mudou'.
+     */
+    function irParaRegiao(id) {
+        id = parseInt(id, 10) || 0;
+        if (id && id !== regiao && acharRegiao(id)) trocarRegiao(id);
+    }
+
+    function enquadrarPontos(lista) {
+        if (!mapa || !lista.length) return;
+        var b = new google.maps.LatLngBounds();
+        lista.forEach(function (p) { b.extend({ lat: p.lat, lng: p.lng }); });
+        mapa.fitBounds(b, 90);
+        google.maps.event.addListenerOnce(mapa, 'idle', function () {
+            if (mapa.getZoom() > ZOOM_MAX_ENQUADRAR) mapa.setZoom(ZOOM_MAX_ENQUADRAR);
+        });
+    }
+
+    var api = {
+        regiao: function () { return regiao; },
+        modo: function () { return modo; },
+        posicionando: function () { return nomeNovaRegiao !== null; },
+        desenhando: function () { return desenhandoCabo(); },
+
+        /** O estado novo dos passos chegou: as travas acompanham. */
+        atualizarPassos: function (p) {
+            travas = { pop: !!p.feitos.pop, ancoras: parseInt(p.ancoras, 10) || 0 };
+            aplicarTravas();
+        },
+
+        /** Passo 2: devolve o motivo da recusa, ou '' e entra no posicionamento. */
+        novaRegiao: function (nome) {
+            var recusa = recusaNomeRegiao(nome, null);
+            if (!recusa) iniciarPosicionamento(nome);
+            return recusa;
+        },
+
+        /** Passos 3 e 4: modo Ponto já com o tipo (e o nome, se vier) escolhidos. */
+        novoPonto: function (tipo, nome, regiaoId) {
+            irParaRegiao(regiaoId);
+            presetPonto = { tipo: tipo, nome: nome || '' };
+            definirModo('caixa');
+            selecionarTipo(tipo);
+        },
+
+        /** Passo 5: o traçado sai de `desde` e o destino pula até o cabo chegar nele. */
+        novoCabo: function (desde, ate) {
+            irParaRegiao(desde.regiao_id);
+            definirModo('navegar');
+            if (modo !== 'navegar') return;
+            caboDesde = { tipo: 'CAIXA', id: desde.id, nome: desde.nome, lat: desde.lat, lng: desde.lng };
+            pontoEmDestaque = ate ? ate.id : 0;
+            enquadrarPontos(ate ? [desde, ate] : [desde]);
+            definirModo('cabo');
+            if (ultimoDesenho) desenhar(ultimoDesenho);
+        },
+
+        /** "Voltar" do balão: larga o que estava fazendo, sem gravar nada. */
+        cancelar: function () {
+            if (nomeNovaRegiao !== null) encerrarPosicionamento();
+            definirModo('navegar');
+        }
     };
     /* ---------------------------------------------------------------- emendar no cabo
      *

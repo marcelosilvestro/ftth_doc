@@ -75,6 +75,7 @@ final class Ajustes
             'aposentadas' => count($e['aposentadas'] ?? []),
             'addon'       => (string) ($manifest['version'] ?? ''),
             'instalador'  => 'wget -O - ' . FTTH_URL_INSTALADOR . ' | bash',
+            'ultima_url'  => FTTH_URL_ULTIMA_VERSAO,
         ];
     }
 }

@@ -625,8 +625,9 @@ resumo() {
     echo " Direto:     $url_painel"
     echo
     echo " O que falta voce fazer:"
-    echo "   1. cadastrar a chave do Google Maps em Configuracoes (o mapa nao abre sem ela)"
-    echo "   2. criar a primeira regiao e importar o KMZ da sua rede"
+    echo "   1. abrir o mapa: os primeiros passos guiam a chave do Google Maps, a regiao,"
+    echo "      o POP, a primeira caixa e o primeiro cabo"
+    echo "   2. se voce ja tem a rede em KMZ, importe pelo painel do mapa (aba Ajustes)"
     [ -n "$DUMP" ] && echo "   3. guardar o backup do banco: $DUMP"
     echo
     echo " Atualizar no futuro: rode este mesmo comando de novo."

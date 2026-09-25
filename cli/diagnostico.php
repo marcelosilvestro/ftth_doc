@@ -114,7 +114,7 @@ if ($cfg === null) {
             verificar($itens, $chave !== '' ? 'ok' : 'aviso', 'chave do Google Maps',
                 $chave !== ''
                     ? 'cadastrada (' . substr($chave, 0, 6) . '...)'
-                    : 'vazia — o mapa nao abre ate cadastrar em Configuracoes');
+                    : 'vazia — o mapa pede a chave no primeiro acesso');
 
             foreach (['sync_sis_cliente', 'sync_cto_nativa'] as $flag) {
                 if (Config::ligado($flag)) {

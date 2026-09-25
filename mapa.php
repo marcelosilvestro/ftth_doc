@@ -13,6 +13,7 @@ require_once __DIR__ . '/lib/Caixa.php';
 require_once __DIR__ . '/lib/Cabo.php';
 require_once __DIR__ . '/lib/Topologia.php';
 require_once __DIR__ . '/lib/Ajustes.php';
+require_once __DIR__ . '/lib/PrimeirosPassos.php';
 
 /* ------------------------------------------------------------------ AJAX */
 if (isset($_GET['ajax'])) {
@@ -78,6 +79,15 @@ if (isset($_GET['ajax'])) {
             case 'ajustes':
                 ftth_exigir_csrf();
                 Resultado::ok(Ajustes::salvar($_POST, $usuario_logado))->enviar();
+
+            // Primeiros passos: o estado sai do banco, e a tela pede de novo a cada mudança.
+            case 'passos':
+                Resultado::ok(PrimeirosPassos::estado())->enviar();
+
+            case 'passos_pular':
+                ftth_exigir_csrf();
+                Resultado::ok(PrimeirosPassos::pular(($_POST['pular'] ?? '1') === '1',
+                                                     $usuario_logado))->enviar();
 
             // Só quando a aba Ajustes abre: não pesa a abertura do mapa.
             case 'estado':
@@ -311,10 +321,12 @@ $chave     = '';
 $aj        = ['google_maps_key' => '', 'mapa_tipo' => 'hybrid', 'mapa_rotulo_zoom' => 17,
               'raio_quebra_cabo_m' => 10];
 $falha     = null;
+$passos    = null;
 try {
     $regioes = Regiao::listar();
     $chave   = (string) Config::get('google_maps_key', '');
     $aj      = Ajustes::valores();
+    $passos  = PrimeirosPassos::estado();
 } catch (Throwable $e) {
     Log::excecao('mapa.carregar', $e);
     $falha = 'Não foi possível carregar o mapa. FTTH-SYS-001 · ' . Resultado::requestId();
@@ -332,30 +344,6 @@ include('nav/header.php');
 <div class="ftth-wrap ftth-wrap--mapa">
     <?php if ($falha): ?>
         <div class="ftth-aviso ftth-aviso--erro"><?= htmlspecialchars($falha) ?></div>
-    <?php elseif ($chave === ''): ?>
-        <!-- Primeiro acesso de qualquer instalação nova cai aqui. É a única tela do addon que
-             não funciona sozinha, então ela explica o caminho inteiro em vez de só reclamar. -->
-        <div class="ftth-aviso ftth-aviso--erro ftth-aviso--passos">
-            <strong>O mapa precisa de uma chave do Google Maps para abrir.</strong>
-            <ol>
-                <li>No <a href="https://console.cloud.google.com/google/maps-apis" target="_blank"
-                          rel="noopener">console do Google Cloud</a>, ative a
-                    <strong>Maps JavaScript API</strong> e gere uma chave.</li>
-                <li>Ainda no console, em <em>Restrições do aplicativo</em>, escolha
-                    <strong>Referenciadores HTTP</strong> e libere o endereço deste painel —
-                    <code><?= htmlspecialchars(($_SERVER['HTTP_HOST'] ?? 'seu-servidor')) ?>/*</code>.
-                    Sem isso o Google recusa a chave e o mapa abre cinza.</li>
-                <li>Cole a chave aqui e salve — a página recarrega sozinha:</li>
-            </ol>
-            <div class="ftth-chave-inicial">
-                <input id="chave-inicial" class="ftth-campo" autocomplete="off" spellcheck="false"
-                       placeholder="AIza...">
-                <button class="ftth-btn ftth-btn--pri" id="chave-inicial-salvar">Salvar</button>
-            </div>
-            <div id="chave-inicial-saida"></div>
-            <span class="ftth-sub">A chave fica no seu servidor, em <code>tab_ftth_config</code>;
-                o addon não envia nada para fora além das requisições do próprio mapa.</span>
-        </div>
     <?php endif; ?>
 
     <!-- Barra única: modos, região, busca, camadas, resumo e configurações numa linha só.
@@ -380,12 +368,151 @@ include('nav/header.php');
             <div id="busca-lista" class="ftth-busca-lista"></div>
         </div>
 
-        <div class="ftth-resumo" id="resumo-mapa"></div>
+        <div class="ftth-barra-dir">
+            <!-- Enquanto a rede não tem o básico (chave, região, POP, caixa, cabo), a pílula
+                 reabre o assistente. Some sozinha quando os cinco passos existem no banco. -->
+            <button type="button" class="ftth-onb-pilula" id="onb-pilula" style="display:none">
+                <i class="bi-rocket-takeoff-fill"></i> Primeiros passos
+                <b id="onb-pilula-conta"></b></button>
+            <div class="ftth-resumo" id="resumo-mapa"></div>
+        </div>
 
     </div>
 
     <div class="ftth-mapa-area" id="mapa-area">
-        <div id="mapa"></div>
+        <div id="mapa"<?= $chave === '' ? ' class="ftth-mapa-vazio"' : '' ?>></div>
+
+        <!-- Primeiros passos (js/onboarding.js). Card centralizado nos passos de ler e decidir;
+             nos que exigem mexer no mapa ele sai da frente e fica só o balão de baixo. O passo
+             em que a pessoa está vem do banco (PrimeirosPassos), nunca de uma marca gravada. -->
+        <div id="onb" class="ftth-onb" style="display:none">
+            <div class="ftth-onb-card" role="dialog" aria-labelledby="onb-titulo">
+                <button type="button" class="ftth-painel-fechar" id="onb-fechar" title="Pular por agora">&times;</button>
+                <div class="ftth-onb-topo">
+                    <span class="ftth-onb-selo">Primeiros passos</span>
+                    <ol class="ftth-onb-trilha" id="onb-trilha">
+                        <li data-passo="chave"><span>1</span>Chave</li>
+                        <li data-passo="regiao"><span>2</span>Região</li>
+                        <li data-passo="pop"><span>3</span>POP</li>
+                        <li data-passo="caixa"><span>4</span>Caixa</li>
+                        <li data-passo="cabo"><span>5</span>Cabo</li>
+                    </ol>
+                </div>
+
+                <section class="ftth-onb-passo" data-passo="chave">
+                    <h2 id="onb-titulo"><i class="bi-key-fill"></i>
+                        <span id="onb-chave-titulo">Bem-vindo ao FTTH Doc</span></h2>
+                    <p id="onb-chave-texto">Em cinco passos a sua rede começa a aparecer no mapa. O
+                        primeiro é a chave do Google Maps, que é quem desenha o mapa.</p>
+                    <div id="onb-chave-erro" class="ftth-aviso ftth-aviso--erro" style="display:none"></div>
+                    <label class="ftth-rotulo-campo" for="onb-chave">Chave do Google Maps</label>
+                    <div class="ftth-onb-linha">
+                        <input id="onb-chave" class="ftth-campo" autocomplete="off" spellcheck="false">
+                        <button type="button" class="ftth-btn ftth-btn--pri" id="onb-chave-salvar">
+                            <i class="bi-check-circle-fill"></i> Salvar</button>
+                    </div>
+                    <div id="onb-chave-saida"></div>
+                    <details class="ftth-onb-ajuda" id="onb-chave-ajuda">
+                        <summary>Não tenho a chave. Como consigo?</summary>
+                        <ol>
+                            <li>No <a href="https://console.cloud.google.com/google/maps-apis" target="_blank"
+                                      rel="noopener">console do Google Cloud</a>, ative a
+                                <strong>Maps JavaScript API</strong>. O Google pede uma conta de
+                                faturamento ativa no projeto.</li>
+                            <li>Em <strong>Credenciais</strong>, crie uma <strong>chave de API</strong>.</li>
+                            <li>Na chave, em <em>Restrições do aplicativo</em>, escolha
+                                <strong>Sites</strong> e adicione este endereço:
+                                <span class="ftth-onb-copiar">
+                                    <code id="onb-host"><?= htmlspecialchars(($_SERVER['HTTP_HOST'] ?? 'seu-servidor')) ?>/*</code>
+                                    <button type="button" class="ftth-btn ftth-btn--sec" id="onb-host-copiar">
+                                        <i class="bi-clipboard"></i> Copiar</button>
+                                </span>
+                                Sem ele o Google recusa a chave e o mapa abre cinza.</li>
+                            <li>Copie a chave, cole acima e salve.</li>
+                        </ol>
+                    </details>
+                    <p class="ftth-sub ftth-onb-nota">A chave fica guardada no seu servidor. Nenhum dado da
+                        sua rede sai dele: fora o próprio mapa, o addon só consulta o GitHub quando
+                        você pede para verificar atualização.</p>
+                </section>
+
+                <section class="ftth-onb-passo" data-passo="regiao">
+                    <h2><i class="bi-map"></i> Onde fica a sua rede?</h2>
+                    <p>A região é a área que você vai documentar: uma cidade, um distrito, um bairro.
+                        Dê um nome e, em seguida, leve o mapa até lá.</p>
+                    <label class="ftth-rotulo-campo" for="onb-regiao">Nome da região</label>
+                    <div class="ftth-onb-linha">
+                        <input id="onb-regiao" class="ftth-campo" maxlength="80" autocomplete="off">
+                        <button type="button" class="ftth-btn ftth-btn--pri" id="onb-regiao-seguir">
+                            Continuar <i class="bi-arrow-right"></i></button>
+                    </div>
+                    <div id="onb-regiao-saida"></div>
+                </section>
+
+                <section class="ftth-onb-passo" data-passo="pop">
+                    <h2><i class="bi-hdd-rack-fill"></i> Marque o seu POP</h2>
+                    <div class="ftth-onb-cadeia" data-foco="pop"></div>
+                    <p>O POP (ou Data Center) é onde ficam a OLT e o DIO. É dele que as fibras saem
+                        para a rua, por isso toda a rede começa nele.</p>
+                    <button type="button" class="ftth-btn ftth-btn--pri ftth-onb-acao" data-acao="pop">
+                        <i class="bi-geo-alt-fill"></i> Marcar o POP no mapa</button>
+                </section>
+
+                <section class="ftth-onb-passo" data-passo="caixa">
+                    <h2><i class="bi-box-seam"></i> Agora, a primeira caixa na rua</h2>
+                    <div class="ftth-onb-cadeia" data-foco="caixa"></div>
+                    <p>O cabo que sai do <strong class="js-onb-pop"></strong> precisa chegar a algum
+                        lugar. Marque a primeira caixa da rede: normalmente uma <strong>CEO</strong>;
+                        se o seu POP sai direto numa <strong>CTO</strong>, pode ser ela.</p>
+                    <button type="button" class="ftth-btn ftth-btn--pri ftth-onb-acao" data-acao="caixa">
+                        <i class="bi-geo-alt-fill"></i> Marcar a caixa no mapa</button>
+                </section>
+
+                <section class="ftth-onb-passo" data-passo="cabo">
+                    <h2><i class="bi-share-fill"></i> Ligue o POP à caixa</h2>
+                    <div class="ftth-onb-cadeia" data-foco="cabo"></div>
+                    <p>Um cabo sempre liga duas caixas. Ele já vai começar no
+                        <strong class="js-onb-pop"></strong>: siga a rua clicando no mapa e termine
+                        clicando em <strong class="js-onb-caixa"></strong>.</p>
+                    <button type="button" class="ftth-btn ftth-btn--pri ftth-onb-acao" data-acao="cabo">
+                        <i class="bi-share-fill"></i> Desenhar o cabo</button>
+                </section>
+
+                <section class="ftth-onb-passo" data-passo="fim">
+                    <h2><i class="bi-check-circle-fill ftth-onb-ok"></i> Sua rede começou!</h2>
+                    <div class="ftth-onb-cadeia" data-foco="fim"></div>
+                    <p>POP, caixa e cabo estão no mapa. Daqui em diante é repetir: marcar as caixas e
+                        ligar os cabos entre elas. Dois próximos passos, quando quiser:</p>
+                    <div class="ftth-onb-proximos">
+                        <a class="ftth-onb-proximo" id="onb-link-pop" href="#">
+                            <i class="bi-hdd-rack-fill"></i>
+                            <strong>Configurar o POP</strong>
+                            <span>Cadastre a OLT e o DIO: é deles que sai o sinal da rede.</span></a>
+                        <a class="ftth-onb-proximo" id="onb-link-caixa" href="#">
+                            <i class="bi-diagram-3-fill"></i>
+                            <strong>Abrir o diagrama da <span class="js-onb-caixa"></span></strong>
+                            <span>Ligue as fibras que chegam: fusão, passagem e splitter.</span></a>
+                    </div>
+                </section>
+
+                <div class="ftth-onb-rodape">
+                    <button type="button" class="ftth-onb-link" id="onb-pular">Pular por agora</button>
+                    <span class="ftth-onb-contagem" id="onb-contagem"></span>
+                    <button type="button" class="ftth-btn ftth-btn--pri" id="onb-concluir" style="display:none">
+                        Continuar no mapa</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Balão dos passos que se fazem no mapa: fica fixo, não some como um toast. -->
+        <div id="onb-balao" class="ftth-onb-balao" style="display:none">
+            <span class="ftth-onb-balao-num" id="onb-balao-num"></span>
+            <div class="ftth-onb-balao-texto">
+                <strong id="onb-balao-titulo"></strong>
+                <span id="onb-balao-texto"></span>
+            </div>
+            <button type="button" class="ftth-onb-link" id="onb-balao-voltar">Voltar</button>
+        </div>
 
         <!-- Painel lateral (padrão UpperX): regiões e camadas hoje; pontos e o que vier
              depois ganham aba aqui, em vez de mais botão na barra. Abre por cima do mapa. -->
@@ -455,41 +582,44 @@ include('nav/header.php');
                         <input id="aj-chave" class="ftth-campo" autocomplete="off" spellcheck="false"
                                placeholder="AIza..." value="<?= htmlspecialchars($aj['google_maps_key']) ?>">
 
-                        <label class="ftth-rotulo-campo" for="aj-tipo">Tipo de mapa</label>
-                        <select id="aj-tipo" class="ftth-campo">
-                            <?php foreach (Ajustes::TIPOS_MAPA as $v => $r): ?>
-                                <option value="<?= $v ?>" <?= $aj['mapa_tipo'] === $v ? 'selected' : '' ?>><?= $r ?></option>
-                            <?php endforeach; ?>
-                        </select>
-
+                        <!-- O raio de emenda (raio_quebra_cabo_m) saiu da tela em 25/09/2026: fica
+                             no padrão de 10 m, que o servidor continua lendo de tab_ftth_config. -->
                         <div class="ftth-ajustes-par">
+                            <div>
+                                <label class="ftth-rotulo-campo" for="aj-tipo">Tipo de mapa</label>
+                                <select id="aj-tipo" class="ftth-campo">
+                                    <?php foreach (Ajustes::TIPOS_MAPA as $v => $r): ?>
+                                        <option value="<?= $v ?>" <?= $aj['mapa_tipo'] === $v ? 'selected' : '' ?>><?= $r ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                             <div>
                                 <label class="ftth-rotulo-campo" for="aj-zoom">Zoom do rótulo</label>
                                 <input id="aj-zoom" class="ftth-campo" type="number" min="3" max="21"
                                        value="<?= (int) $aj['mapa_rotulo_zoom'] ?>">
                             </div>
-                            <div title="Distância em que o mapa oferece emendar a caixa no cabo">
-                                <label class="ftth-rotulo-campo" for="aj-raio">Raio de emenda (m)</label>
-                                <input id="aj-raio" class="ftth-campo" type="number" min="1" max="100"
-                                       value="<?= (int) $aj['raio_quebra_cabo_m'] ?>">
-                            </div>
                         </div>
 
                         <button type="button" class="ftth-btn ftth-btn--pri ftth-gaveta-acao" id="aj-salvar">
                             <i class="bi-check-circle-fill"></i> Salvar</button>
-                        <p class="ftth-sub" style="margin:8px 0 0">
-                            A chave vem do console do Google (Maps JavaScript API) e deve ser
-                            <strong>restrita por domínio</strong> ao endereço deste painel.</p>
                         <div id="aj-saida"></div>
                     </div>
 
                     <p class="ftth-gaveta-secao" style="margin-top:16px">Dados</p>
                     <a class="ftth-btn ftth-btn--sec ftth-gaveta-acao" href="importar.php">
                         <i class="bi-box-seam"></i> Importar KMZ</a>
+                    <button type="button" class="ftth-btn ftth-btn--sec ftth-gaveta-acao" id="onb-rever">
+                        <i class="bi-signpost-2-fill"></i> Rever os primeiros passos</button>
                 </div>
 
                 <div class="ftth-gaveta-rodape ftth-estado" id="estado-banco">
                     <p class="ftth-gaveta-vazio" style="padding:0">Lendo o estado do banco…</p>
+                </div>
+                <!-- Fora do #estado-banco, que o JS reescreve a cada leitura. -->
+                <div class="ftth-gaveta-rodape ftth-autor">
+                    <span>By <strong>Marcelo Silvestro</strong></span>
+                    <a href="https://wa.me/5542984277951" target="_blank" rel="noopener">
+                        <i class="bi-whatsapp"></i> +55 42 98427-7951</a>
                 </div>
             </section>
         </aside>
@@ -643,6 +773,10 @@ include('nav/header.php');
                     </button>
                 <?php endforeach; ?>
             </div>
+            <!-- Enquanto não existe POP, só o DC/POP fica liberado (js/mapa.js, aplicarTravas). -->
+            <p class="ftth-sub ftth-trava" id="nc-trava" style="display:none">
+                <i class="bi-info-circle-fill"></i> Comece pelo POP: é dele que as fibras saem.
+                Os outros tipos se liberam assim que ele existir.</p>
 
             <label class="ftth-rotulo-campo">Cor de identificação</label>
             <div class="ftth-cores">
@@ -830,10 +964,13 @@ window.FTTH_MAPA = {
     cabo_espessura:   <?= (int) Config::num('mapa_cabo_espessura', 5) ?>,
     cabo_espessura_q: <?= (int) Config::num('mapa_cabo_espessura_q', 4) ?>,
     // Uma fonte só para o desenho: o marcador e a ficha trocam o {cor} por conta própria.
-    silhuetas: <?= json_encode(Caixa::SILHUETAS, JSON_UNESCAPED_SLASHES) ?>
+    silhuetas: <?= json_encode(Caixa::SILHUETAS, JSON_UNESCAPED_SLASHES) ?>,
+    // Primeiros passos: o mesmo estado que mapa.php?ajax=passos devolve depois.
+    passos: <?= json_encode($passos, JSON_UNESCAPED_UNICODE) ?>
 };
 </script>
 <script src="js/mapa.js?v=<?= time() ?>"></script>
+<script src="js/onboarding.js?v=<?= time() ?>"></script>
 <?php if ($chave !== ''): ?>
 <script async defer
     src="https://maps.googleapis.com/maps/api/js?key=<?= rawurlencode($chave) ?>&callback=ftthIniciarMapa&language=pt-BR&region=BR"></script>

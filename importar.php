@@ -125,75 +125,74 @@ include('nav/header.php');
 <body>
 <?php include('../../topo.php'); ?>
 
-<div class="ftth-wrap">
-    <h1 class="ftth-titulo">Importar KMZ</h1>
-    <p class="ftth-sub">
-        O arquivo entra em <strong>quarentena</strong>: nada vai para a rede antes de você conferir.
-        Itens com alerta ficam de fora da importação em lote.
-    </p>
-
-    <div class="ftth-acoes-topo">
+<!-- Tela compacta (25/09/2026): cabeçalho numa linha, envio numa linha, e quarentena + itens
+     num card só — contadores, abas e ações em lote na mesma barra, em cima da tabela. -->
+<div class="ftth-wrap ftth-imp">
+    <div class="ftth-imp-cab">
         <a class="ftth-btn ftth-btn--sec" href="mapa.php"><i class="bi-arrow-left"></i> Mapa</a>
+        <div>
+            <h1 class="ftth-titulo"><i class="bi-box-seam"></i> Importar KMZ</h1>
+            <p class="ftth-sub">O arquivo entra em <strong>quarentena</strong>: nada vai para a rede antes
+                de você conferir. Itens com alerta ficam de fora da importação em lote.</p>
+        </div>
     </div>
 
     <?php if ($falha): ?><div class="ftth-aviso ftth-aviso--erro"><?= htmlspecialchars($falha) ?></div><?php endif; ?>
 
-    <div class="ftth-card">
-        <h2>Região e arquivo</h2>
-        <div class="row g-3">
-            <div class="col-12 col-md-4">
-                <label class="ftth-sub">Região</label><br>
-                <select id="sel-regiao" style="width:100%;padding:7px;border:1px solid var(--ftth-borda);border-radius:4px">
-                    <option value="">— selecione —</option>
-                    <?php foreach ($regioes as $r): ?>
-                        <option value="<?= (int) $r['id'] ?>">
-                            <?= htmlspecialchars($r['nome']) ?>
-                            (<?= (int) $r['caixas'] ?> caixas<?= $r['quarentena'] ? ', ' . (int) $r['quarentena'] . ' na quarentena' : '' ?>)
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if (!$regioes): ?>
-                    <p class="ftth-sub" style="margin-top:8px">Nenhuma região cadastrada ainda.</p>
-                <?php endif; ?>
-            </div>
-            <div class="col-12 col-md-8">
-                <label class="ftth-sub">Arquivo KMZ ou KML (até 32 MB)</label><br>
-                <input type="file" id="arq" accept=".kmz,.kml">
-                <button class="ftth-btn ftth-btn--pri" id="btn-enviar">Enviar</button>
-                <label class="ftth-sub" style="margin-left:10px">
-                    <input type="checkbox" id="forcar"> importar mesmo se o arquivo já foi usado
-                </label>
-            </div>
+    <div class="ftth-card ftth-imp-envio">
+        <div class="ftth-imp-campo">
+            <label class="ftth-rotulo-campo" for="sel-regiao">Região</label>
+            <select id="sel-regiao" class="ftth-campo">
+                <option value="">— selecione —</option>
+                <?php foreach ($regioes as $r): ?>
+                    <option value="<?= (int) $r['id'] ?>">
+                        <?= htmlspecialchars($r['nome']) ?>
+                        (<?= (int) $r['caixas'] ?> caixas<?= $r['quarentena'] ? ', ' . (int) $r['quarentena'] . ' na quarentena' : '' ?>)
+                    </option>
+                <?php endforeach; ?>
+            </select>
         </div>
-        <div id="saida-envio" style="margin-top:10px"></div>
-    </div>
-
-    <div class="ftth-card" id="card-contadores" style="display:none">
-        <h2>Quarentena</h2>
-        <div id="contadores"></div>
-        <div style="margin-top:10px">
-            <button class="ftth-btn ftth-btn--pri" id="btn-importar-sel" disabled>Importar selecionados</button>
-            <button class="ftth-btn ftth-btn--sec" id="btn-descartar-sel" disabled>Descartar selecionados</button>
-            <label class="ftth-sub" style="margin-left:10px">
-                <input type="checkbox" id="incluir-alerta"> incluir itens com alerta
-            </label>
-            <span class="ftth-sub" id="contagem-sel" style="margin-left:10px"></span>
+        <div class="ftth-imp-campo">
+            <label class="ftth-rotulo-campo" for="arq">Arquivo KMZ ou KML (até 32 MB)</label>
+            <input type="file" id="arq" class="ftth-imp-arquivo" accept=".kmz,.kml">
         </div>
-        <div id="saida-lote" style="margin-top:10px"></div>
+        <button class="ftth-btn ftth-btn--pri" id="btn-enviar"><i class="bi-upload"></i> Enviar</button>
+        <label class="ftth-sub ftth-imp-chk">
+            <input type="checkbox" id="forcar"> importar mesmo se o arquivo já foi usado
+        </label>
+        <?php if (!$regioes): ?>
+            <p class="ftth-sub ftth-imp-linha">Nenhuma região cadastrada ainda: crie a primeira no mapa.</p>
+        <?php endif; ?>
+        <div id="saida-envio" class="ftth-imp-linha"></div>
     </div>
 
     <div class="ftth-card" id="card-itens" style="display:none">
-        <h2>Itens <span class="ftth-sub" id="titulo-status">pendentes</span></h2>
-        <div style="margin-bottom:8px">
-            <button class="ftth-btn ftth-btn--sec btn-status" data-status="pendente">Pendentes</button>
-            <button class="ftth-btn ftth-btn--sec btn-status" data-status="importado">Importados</button>
-            <button class="ftth-btn ftth-btn--sec btn-status" data-status="descartado">Descartados</button>
+        <div class="ftth-imp-topo">
+            <h2>Quarentena</h2>
+            <div id="contadores" class="ftth-imp-contadores"></div>
         </div>
-        <div style="max-height:460px;overflow:auto">
+        <div class="ftth-imp-barra">
+            <div class="ftth-imp-abas">
+                <button class="btn-status ativo" data-status="pendente">Pendentes</button>
+                <button class="btn-status" data-status="importado">Importados</button>
+                <button class="btn-status" data-status="descartado">Descartados</button>
+            </div>
+            <!-- Em lote só se age sobre pendentes: nas outras abas a barra fica só com as abas. -->
+            <div class="ftth-imp-lote" id="imp-lote">
+                <span class="ftth-sub" id="contagem-sel"></span>
+                <label class="ftth-sub ftth-imp-chk">
+                    <input type="checkbox" id="incluir-alerta"> incluir itens com alerta
+                </label>
+                <button class="ftth-btn ftth-btn--sec" id="btn-descartar-sel" disabled>Descartar selecionados</button>
+                <button class="ftth-btn ftth-btn--pri" id="btn-importar-sel" disabled>Importar selecionados</button>
+            </div>
+        </div>
+        <div id="saida-lote"></div>
+        <div class="ftth-imp-tabela">
             <table class="ftth-tabela" id="tabela-itens">
                 <thead><tr>
                     <th style="width:26px"><input type="checkbox" id="sel-todos"></th>
-                    <th>Nome</th><th>Tipo</th><th>Detalhe</th><th>Situação</th><th style="width:150px"></th>
+                    <th>Nome</th><th>Tipo</th><th>Detalhe</th><th>Situação</th><th style="width:1%"></th>
                 </tr></thead>
                 <tbody></tbody>
             </table>
@@ -232,7 +231,6 @@ include('nav/header.php');
                         '<span class="ftth-selo ftth-selo--ok">' + (c.importados || 0) + ' importados</span> ' +
                         '<span class="ftth-selo ftth-selo--pend">' + (c.com_alerta || 0) + ' com alerta</span> ' +
                         '<span class="ftth-selo ftth-selo--info">' + (c.descartados || 0) + ' descartados</span>');
-                    $('#card-contadores').show();
                 }
                 var html = '';
                 (d.importacoes || []).forEach(function (i) {
@@ -282,7 +280,7 @@ include('nav/header.php');
                  +  '<td>' + esc(i.tipo_sugerido) + '</td>'
                  +  '<td>' + detalhe + '</td>'
                  +  '<td>' + situacao + '</td>'
-                 +  '<td>' + (i.status === 'pendente'
+                 +  '<td class="ftth-imp-acoes">' + (i.status === 'pendente'
                         ? '<button class="ftth-btn ftth-btn--sec btn-item" data-acao="importar" data-id="' + i.id + '">Importar</button> '
                         + '<button class="ftth-btn ftth-btn--sec btn-item" data-acao="descartar" data-id="' + i.id + '">Descartar</button>'
                         : '') + '</td></tr>';
@@ -345,7 +343,7 @@ include('nav/header.php');
         fd.append('arquivo', arq);
         if ($('#forcar').is(':checked')) fd.append('forcar', '1');
 
-        var $b = $(this).prop('disabled', true).text('Enviando...');
+        var $b = $(this).prop('disabled', true).text('Enviando…');
         FTTH.chamar({
             url: 'importar.php?ajax=enviar',
             method: 'POST',
@@ -358,7 +356,7 @@ include('nav/header.php');
                 carregarEstado(); carregarItens();
             },
             onErro: function (m) { aviso('#saida-envio', m, 'ftth-aviso--erro'); }
-        }).always(function () { $b.prop('disabled', false).text('Enviar'); });
+        }).always(function () { $b.prop('disabled', false).html('<i class="bi-upload"></i> Enviar'); });
     });
 
     $(document).on('change', '.chk', atualizarSelecao);
@@ -384,7 +382,11 @@ include('nav/header.php');
     });
     $('.btn-status').on('click', function () {
         status = $(this).data('status');
-        $('#titulo-status').text(status + 's');
+        $('.btn-status').removeClass('ativo');
+        $(this).addClass('ativo');
+        $('#imp-lote').toggle(status === 'pendente');
+        $('#sel-todos').prop('checked', false).toggle(status === 'pendente');
+        $('#saida-lote').empty();
         carregarItens();
     });
 })();
